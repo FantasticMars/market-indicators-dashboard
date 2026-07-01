@@ -6,17 +6,21 @@ import {
   buildMarketModel,
 } from "./model.js";
 
+const hasDocument = typeof document !== "undefined";
+const runtimeConfig = globalThis.window?.MARKET_INDICATORS_CONFIG || {};
+
 const state = {
   instruments: [...DEFAULT_INSTRUMENTS],
   refreshTimer: null,
   loading: false,
   lastEvents: [],
   bandState: loadBandState(),
+  lastDataMode: "api",
 };
 
 const pageConfig = {
-  page: document.body.dataset.page || "dashboard",
-  segmentId: document.body.dataset.segmentId || null,
+  page: hasDocument ? document.body.dataset.page || "dashboard" : "dashboard",
+  segmentId: hasDocument ? document.body.dataset.segmentId || null : null,
 };
 
 const DETAIL_URLS = {
@@ -25,8 +29,6 @@ const DETAIL_URLS = {
   hong_kong: "hong-kong.html",
   crypto: "crypto.html",
 };
-
-const runtimeConfig = window.MARKET_INDICATORS_CONFIG || {};
 
 const LEGACY_DEFAULT_SYMBOLS = [
   "SPY", "QQQ", "IWM", "RSP", "HYG", "TLT", "SHY", "VXX",
@@ -40,7 +42,7 @@ const PRE_NATIVE_DEFAULT_SYMBOLS = [
   "BTC",
 ];
 
-const els = {
+const els = hasDocument ? {
   autoRefreshToggle: document.querySelector("#autoRefreshToggle"),
   refreshInterval: document.querySelector("#refreshInterval"),
   refreshButton: document.querySelector("#refreshButton"),
@@ -63,7 +65,7 @@ const els = {
   marketTableBody: document.querySelector("#marketTableBody"),
   exposureBands: document.querySelector("#exposureBands"),
   eventLog: document.querySelector("#eventLog"),
-};
+} : {};
 
 function loadBandState() {
   try {
@@ -83,10 +85,30 @@ function init() {
     }
   }
   syncSymbolInput();
+  applyRuntimeUi();
   if (els.exposureBands) renderExposureBands(null);
   bindEvents();
   refreshDashboard();
   scheduleRefresh();
+}
+
+function applyRuntimeUi() {
+  const mode = currentDataMode();
+  state.lastDataMode = mode;
+  const toggleText = hasDocument ? document.querySelector(".toggle span") : null;
+  if (mode === "static") {
+    if (els.autoRefreshToggle) els.autoRefreshToggle.checked = false;
+    if (els.refreshInterval) els.refreshInterval.disabled = true;
+    if (toggleText) toggleText.textContent = "每日快照";
+    if (els.refreshButton) els.refreshButton.textContent = "重新读取";
+    if (els.statusBanner) {
+      els.statusBanner.innerHTML = "<strong>正在读取每日快照...</strong><span>数据由 GitHub Actions 定时生成，不需要常驻云服务器。</span>";
+    }
+    return;
+  }
+
+  if (els.refreshInterval) els.refreshInterval.disabled = false;
+  if (toggleText) toggleText.textContent = "自动刷新";
 }
 
 function isLegacyDefaultSymbols(value) {
@@ -164,6 +186,9 @@ function scheduleRefresh() {
   if (state.refreshTimer) {
     window.clearInterval(state.refreshTimer);
   }
+  if (currentDataMode() === "static") {
+    return;
+  }
   if (!els.autoRefreshToggle?.checked) {
     return;
   }
@@ -175,16 +200,22 @@ async function refreshDashboard() {
   state.loading = true;
   setLoading(true);
   const symbols = getSymbols();
+  const mode = currentDataMode();
+  state.lastDataMode = mode;
 
   try {
-    if (window.location.protocol === "file:") {
-      throw new Error("请通过本地 server.py 打开 dashboard，直接打开 HTML 无法调用本地数据接口。");
-    }
-
-    const quotesPayload = await fetchJson(`/api/quotes?symbols=${encodeURIComponent(symbols.join(","))}`);
+    const quotesPayload = mode === "static"
+      ? await fetchStaticQuotes()
+      : await fetchJson(`/api/quotes?symbols=${encodeURIComponent(symbols.join(","))}`);
     const model = buildMarketModel(quotesPayload, state.instruments);
-    const historyPayload = await persistHistoryPoint(model);
-    model.history = historyPayload?.points || [];
+    const historyPayload = mode === "static"
+      ? await fetchStaticHistory(model)
+      : await persistHistoryPoint(model);
+    model.history = normalizeHistoryPayload(historyPayload);
+    if (!model.history.length && model.healthScore !== null) {
+      model.history = [buildHistoryPoint(model)];
+    }
+    model.dataMode = mode;
     model.bandState = applyBandHysteresis(model.healthScore, state.bandState, { buffer: 3, confirmations: 2 });
     state.bandState = {
       activeRange: model.bandState.activeBand?.range || null,
@@ -207,6 +238,34 @@ function apiUrl(path) {
   return `${baseUrl}${path.startsWith("/") ? path : `/${path}`}`;
 }
 
+function currentDataMode() {
+  return dataMode(runtimeConfig, globalThis.window?.location || { protocol: "", hostname: "" });
+}
+
+export function dataMode(config = {}, locationLike = { protocol: "", hostname: "" }) {
+  const configured = String(config.DATA_MODE || "auto").trim().toLowerCase();
+  if (configured === "api" || configured === "static") return configured;
+  if (String(config.API_BASE_URL || "").trim()) return "api";
+
+  const protocol = String(locationLike.protocol || "");
+  const hostname = String(locationLike.hostname || "").toLowerCase();
+  if (protocol === "file:") return "static";
+  if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") return "api";
+  return "static";
+}
+
+export function staticDataUrl(path, config = {}) {
+  const baseUrl = String(config.DATA_BASE_URL || "").replace(/\/+$/, "");
+  const cleanPath = String(path || "").replace(/^\/+/, "").replace(/^data\//, "");
+  return baseUrl ? `${baseUrl}/${cleanPath}` : `data/${cleanPath}`;
+}
+
+export function normalizeHistoryPayload(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (Array.isArray(payload?.points)) return payload.points;
+  return [];
+}
+
 function dashboardToken() {
   return runtimeConfig.ACCESS_TOKEN || localStorage.getItem("marketIndicators.accessToken") || "";
 }
@@ -227,6 +286,31 @@ async function fetchJson(url, retryAuth = true) {
   if (response.status === 401 && retryAuth && requestAccessToken()) {
     return fetchJson(url, false);
   }
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+  }
+  return response.json();
+}
+
+async function fetchStaticQuotes() {
+  const payload = await fetchRawJson(staticDataUrl("latest.json", runtimeConfig));
+  if (!Array.isArray(payload.quotes)) {
+    throw new Error("静态快照缺少 quotes 数据，请先运行 GitHub Actions 生成 data/latest.json。");
+  }
+  return payload;
+}
+
+async function fetchStaticHistory(model) {
+  try {
+    return await fetchRawJson(staticDataUrl("history.json", runtimeConfig));
+  } catch (error) {
+    pushEvent(`静态历史记录读取失败：${error.message}`);
+    return { points: model.healthScore === null ? [] : [buildHistoryPoint(model)] };
+  }
+}
+
+async function fetchRawJson(url) {
+  const response = await fetch(url, { cache: "no-store" });
   if (!response.ok) {
     throw new Error(`HTTP ${response.status}: ${response.statusText}`);
   }
@@ -268,7 +352,7 @@ async function persistHistoryPoint(model) {
 function setLoading(isLoading) {
   if (els.refreshButton) {
     els.refreshButton.disabled = isLoading;
-    els.refreshButton.textContent = isLoading ? "读取中" : "刷新";
+    els.refreshButton.textContent = isLoading ? "读取中" : currentDataMode() === "static" ? "重新读取" : "刷新";
   }
   if (els.applySymbolsButton) els.applySymbolsButton.disabled = isLoading;
 }
@@ -280,9 +364,13 @@ function renderDashboard(model) {
 
   if (els.statusBanner) {
     els.statusBanner.className = `status-banner ${warning ? "warning" : "success"}`;
+    const successTitle = model.dataMode === "static" ? "每日快照读取完成" : "行情读取完成";
+    const successText = model.dataMode === "static"
+      ? "已读取 GitHub Actions 生成的静态数据文件。"
+      : "所有可用 symbol 已更新。";
     els.statusBanner.innerHTML = warning
       ? `<strong>部分数据不可用</strong><span>${failedCount} 个 symbol 读取失败；对应指标会排除或标记。</span>`
-      : `<strong>行情读取完成</strong><span>所有可用 symbol 已更新。</span>`;
+      : `<strong>${successTitle}</strong><span>${successText}</span>`;
   }
 
   if (els.healthScore) els.healthScore.textContent = roundedScore === null ? "--" : String(roundedScore);
@@ -330,6 +418,9 @@ function renderFailure(error) {
   if (els.regimeLabel) els.regimeLabel.textContent = "等待可用数据";
   if (els.exposureGuide) els.exposureGuide.textContent = "暂无仓位参考区间";
   if (els.scoreNarrative) els.scoreNarrative.textContent = "当前没有可用行情。请确认本地 server.py 正在运行，且网络可以访问数据源。";
+  if (els.scoreNarrative && state.lastDataMode === "static") {
+    els.scoreNarrative.textContent = "当前没有可用快照。请确认 GitHub Actions 已生成 data/latest.json 和 data/history.json。";
+  }
   if (els.segmentsGrid) els.segmentsGrid.innerHTML = `<div class="empty-state">没有可用信号。</div>`;
   if (els.segmentDetail) els.segmentDetail.innerHTML = `<div class="empty-state">没有可用信号。</div>`;
   if (els.marketTableBody) els.marketTableBody.innerHTML = state.instruments
@@ -713,4 +804,6 @@ function escapeAttribute(value) {
   return escapeHtml(value).replaceAll("`", "&#096;");
 }
 
-init();
+if (hasDocument) {
+  init();
+}

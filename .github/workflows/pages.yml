@@ -1,0 +1,76 @@
+name: Daily Snapshot Pages
+
+on:
+  push:
+    branches: ["main"]
+  workflow_dispatch:
+  schedule:
+    # 22:30 UTC = 06:30 Asia/Shanghai. This is after the US cash session close.
+    - cron: "30 22 * * *"
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Run tests
+        run: |
+          python -B -m unittest tests.test_server_sources
+          node --test tests/*.test.mjs
+
+      - name: Restore previous deployed score history
+        run: |
+          mkdir -p data
+          curl -fsSL "https://${{ github.repository_owner }}.github.io/${{ github.event.repository.name }}/data/history.json" -o data/history.json || true
+
+      - name: Generate daily market snapshot
+        run: node scripts/generate-static-snapshot.mjs --python python3
+
+      - name: Build static site artifact
+        run: |
+          mkdir -p _site
+          cp index.html us.html china.html hong-kong.html crypto.html china-hk.html styles.css app.js model.js config.js _site/
+          cp -R data _site/data
+          touch _site/.nojekyll
+
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload Pages artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: "_site"
+
+  deploy:
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

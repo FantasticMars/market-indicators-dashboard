@@ -103,7 +103,7 @@ Total score = United States × 45% + China × 22% + Hong Kong / offshore China �
 
 If a source fails, that signal is excluded from the weighted average denominator and the coverage status is lowered. The UI shows available weight versus total intended weight.
 
-Each refresh appends composite and four block scores to `market-history.json`. The UI renders sparklines plus 1D/5D deltas from that local history.
+In local API mode, each refresh appends composite and four block scores to `market-history.json`. In GitHub Pages static mode, GitHub Actions writes the same structure to `data/history.json`. The UI renders sparklines plus 1D/5D deltas from that history.
 
 Position-band changes use hysteresis: the raw score must cross a boundary by 3 points and hold for 2 consecutive refreshes before the displayed band changes. During confirmation, the UI shows a pending band change.
 
@@ -145,15 +145,38 @@ The dashboard maps health score to a rule-based exposure band:
 
 This is a rules-based monitoring framework, not personalized investment advice.
 
-## GitHub And Cloud Deployment
+## GitHub Pages Static Deployment
 
-The project is prepared for a private GitHub repository and China-cloud deployment.
+The recommended free-first deployment is GitHub Pages plus GitHub Actions daily snapshots.
 
 Recommended production shape:
 
-- GitHub private repository for version control and deployment source.
+- GitHub repository for version control and deployment source.
+- GitHub Actions runs `scripts/generate-static-snapshot.mjs` once per day, and can also be triggered manually.
+- GitHub Pages hosts `index.html`, detail pages, CSS/JS, and `data/latest.json` / `data/history.json`.
+- No always-on backend or paid SAE instance is required for daily snapshots.
+
+The hosted dashboard uses `DATA_MODE: "auto"` in `config.js`. Localhost uses API mode, while hosted domains use static snapshot mode.
+
+Static snapshot files:
+
+```text
+data/latest.json
+data/history.json
+```
+
+Deployment guide:
+
+- `deploy/github-pages.md`
+
+## Optional Always-On Cloud Backend
+
+The project can still run as a live backend if needed later.
+
+Optional cloud backend shape:
+
 - Alibaba Cloud SAE backend using the included `Dockerfile`.
-- Tencent CloudBase static hosting for the frontend pages.
+- Tencent CloudBase static hosting for frontend pages.
 - Optional API protection through `DASHBOARD_ACCESS_TOKEN`.
 
 Cloud backend environment variables:
@@ -182,5 +205,6 @@ window.MARKET_INDICATORS_CONFIG = {
 Deployment guides:
 
 - `deploy/github-desktop.md`
+- `deploy/github-pages.md`
 - `deploy/aliyun-sae.md`
 - `deploy/cloudbase.md`

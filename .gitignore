@@ -18,3 +18,4 @@ config.local.js
 dist/
 build/
 .docker-context/
+*.zip

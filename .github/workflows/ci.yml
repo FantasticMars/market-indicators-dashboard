@@ -28,7 +28,9 @@ jobs:
         run: python -B -m unittest tests.test_server_sources
 
       - name: Check Python syntax
-        run: python -B -m py_compile server.py
+        run: |
+          python -B -m py_compile server.py
+          python -B -m py_compile scripts/fetch_quotes_json.py
 
       - name: Run Node tests
         run: node --test tests/*.test.mjs
@@ -37,3 +39,4 @@ jobs:
         run: |
           node --check app.js
           node --check model.js
+          node --check scripts/generate-static-snapshot.mjs
