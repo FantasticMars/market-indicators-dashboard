@@ -1,0 +1,11 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+.git/
+.github/
+market-history.json
+*.log
+.env
+.env.*
+config.local.js
+docs/superpowers/

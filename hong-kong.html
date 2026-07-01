@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>香港/离岸中国详情 - Market Indicators</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body data-page="segment-detail" data-segment-id="hong_kong">
+    <header class="topbar">
+      <div>
+        <p class="eyebrow">Market Indicators</p>
+        <h1>香港 / 离岸中国板块详情</h1>
+      </div>
+      <div class="topbar-actions">
+        <a class="nav-button" href="index.html">总览</a>
+        <a class="nav-button" href="us.html">美国</a>
+        <a class="nav-button" href="china.html">中国</a>
+        <a class="nav-button" href="crypto.html">加密/BTC</a>
+        <label class="toggle">
+          <input id="autoRefreshToggle" type="checkbox" checked />
+          <span>自动刷新</span>
+        </label>
+        <select id="refreshInterval" aria-label="刷新频率">
+          <option value="30">30 秒</option>
+          <option value="60" selected>60 秒</option>
+          <option value="120">2 分钟</option>
+          <option value="300">5 分钟</option>
+        </select>
+        <button id="refreshButton" type="button">刷新</button>
+      </div>
+    </header>
+
+    <main class="page-shell detail-page-shell">
+      <section id="statusBanner" class="status-banner loading" aria-live="polite">
+        <strong>正在读取行情...</strong>
+        <span>详情页会显示指标公式、权重、原始输入和数据源。</span>
+      </section>
+
+      <section class="status-panel detail-status-panel">
+        <div class="panel-label">数据状态</div>
+        <dl class="status-list">
+          <div><dt>来源</dt><dd id="dataSource">--</dd></div>
+          <div><dt>最近更新</dt><dd id="lastUpdated">--</dd></div>
+          <div><dt>实时性</dt><dd id="realtimeStatus">--</dd></div>
+          <div><dt>覆盖率</dt><dd id="coverageStatus">--</dd></div>
+        </dl>
+      </section>
+
+      <section id="segmentDetail" class="section-block"></section>
+
+      <section class="section-block">
+        <div class="section-heading compact">
+          <h2>运行记录</h2>
+          <p>失败的数据源会在这里暴露，不隐藏。</p>
+        </div>
+        <ul id="eventLog" class="event-log"></ul>
+      </section>
+    </main>
+
+    <script src="config.js"></script>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

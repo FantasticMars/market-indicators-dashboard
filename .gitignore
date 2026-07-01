@@ -1,0 +1,20 @@
+.DS_Store
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Local runtime data
+market-history.json
+*.log
+
+# Local secrets and overrides
+.env
+.env.*
+config.local.js
+
+# Packaging output
+dist/
+build/
+.docker-context/
