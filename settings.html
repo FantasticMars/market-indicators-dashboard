@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head><meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><title>数据与设置 - Market Indicators</title><link rel="stylesheet" href="styles.css" /></head>
+  <body data-page="settings">
+    <div class="app-layout">
+      <aside class="sidebar">
+        <a class="brand" href="index.html"><span>MI</span><strong>Market<br />Indicators</strong></a>
+        <nav class="side-nav"><a href="index.html">总览</a><span class="nav-section">市场</span><a href="us.html">美国</a><a href="china.html">A股 / 中国</a><a href="hong-kong.html">港股 / 离岸</a><a href="crypto.html">加密资产</a><span class="nav-section">系统</span><a class="active" href="settings.html">数据与设置</a></nav>
+      </aside>
+      <div class="app-main">
+        <header class="topbar"><div><p class="eyebrow">System</p><h1>数据与设置</h1><p class="topbar-subtitle">刷新、覆盖率、观察池与运行记录</p></div><button id="refreshButton" type="button">更新快照</button></header>
+        <main class="page-shell">
+          <section id="statusBanner" class="status-banner loading" aria-live="polite"><strong>正在读取...</strong><span></span></section>
+          <section class="settings-grid">
+            <article class="status-panel"><div class="panel-label">数据状态</div><dl class="status-list"><div><dt>来源</dt><dd id="dataSource">--</dd></div><div><dt>最近更新</dt><dd id="lastUpdated">--</dd></div><div><dt>实时性</dt><dd id="realtimeStatus">--</dd></div><div><dt>覆盖率</dt><dd id="coverageStatus">--</dd></div></dl></article>
+            <article class="watchlist-panel"><div class="panel-label">观察池</div><textarea id="symbolInput" spellcheck="false"></textarea><div class="watchlist-actions"><button id="applySymbolsButton">应用观察池</button><button id="resetSymbolsButton" class="secondary">恢复默认</button></div><p class="field-help">高级设置。删除必要指标会降低对应支柱的覆盖率。</p></article>
+            <article class="status-panel"><div class="panel-label">刷新方式</div><label class="toggle"><input id="autoRefreshToggle" type="checkbox" checked /><span>自动刷新</span></label><select id="refreshInterval"><option value="30">30 秒</option><option value="60" selected>60 秒</option><option value="120">2 分钟</option><option value="300">5 分钟</option></select></article>
+          </section>
+          <section class="section-block"><div class="section-heading compact"><h2>市场组件与来源</h2><p>这里保留审计信息，不占用首页注意力。</p></div><div class="table-wrap"><table><thead><tr><th>Symbol</th><th>市场角色</th><th>价格</th><th>日变化</th><th>Level</th><th>趋势</th><th>频率 / as-of</th><th>数据源</th></tr></thead><tbody id="marketTableBody"></tbody></table></div></section>
+          <section class="section-block"><div class="section-heading compact"><h2>运行记录</h2></div><ul id="eventLog" class="event-log"></ul></section>
+        </main>
+      </div>
+    </div>
+    <script src="config.js"></script><script type="module" src="app.js"></script>
+  </body>
+</html>

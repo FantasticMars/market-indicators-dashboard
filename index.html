@@ -3,144 +3,66 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Market Indicators</title>
+    <title>市场状态框架</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body data-page="dashboard">
-    <header class="topbar">
-      <div>
-        <p class="eyebrow">Market Indicators</p>
-        <h1>市场健康度 Dashboard</h1>
+    <div class="app-layout">
+      <aside class="sidebar">
+        <a class="brand" href="index.html"><span>MI</span><strong>Market<br />Indicators</strong></a>
+        <nav class="side-nav" aria-label="主要导航">
+          <a class="active" href="index.html">总览</a>
+          <span class="nav-section">市场</span>
+          <a href="us.html">美国</a>
+          <a href="china.html">A股 / 中国</a>
+          <a href="hong-kong.html">港股 / 离岸</a>
+          <a href="crypto.html">加密资产</a>
+          <span class="nav-section">系统</span>
+          <a href="settings.html">数据与设置</a>
+        </nav>
+        <div class="sidebar-foot">四支柱框架<br /><small>不合并为单一结论</small></div>
+      </aside>
+
+      <div class="app-main">
+        <header class="topbar">
+          <div>
+            <p class="eyebrow">Market regime monitor</p>
+            <h1>市场状态框架</h1>
+            <p class="topbar-subtitle">价格确认 · 金融压力 · 宏观流动性 · 基本面</p>
+          </div>
+          <button id="refreshButton" type="button">更新快照</button>
+        </header>
+
+        <main class="page-shell">
+          <section id="statusBanner" class="status-banner loading compact-banner" aria-live="polite">
+            <strong>正在读取最新快照...</strong><span></span>
+          </section>
+
+          <section class="framework-intro">
+            <div>
+              <span class="section-kicker">决策顺序</span>
+              <h2>先确认价格，再检查压力；<br />用流动性解释环境，用基本面判断赔率。</h2>
+            </div>
+            <p>四个支柱各自保留，不做表面精确的总分。价格负责时机，金融压力约束风险，宏观流动性解释驱动，基本面提供中长期锚。</p>
+          </section>
+
+          <section class="section-block">
+            <div class="section-heading"><div><span class="section-kicker">Framework</span><h2>四支柱总览</h2></div><p>每列只比较相同经济含义的信号。</p></div>
+            <div id="pillarsGrid" class="pillar-overview-grid"></div>
+          </section>
+
+          <section class="section-block">
+            <div class="section-heading"><div><span class="section-kicker">Markets</span><h2>各市场状态</h2></div><p>进入详情页查看支柱内指标、公式和原始输入。</p></div>
+            <div id="segmentsGrid" class="segments-grid"></div>
+          </section>
+
+          <section class="section-block exposure-note">
+            <div><span class="section-kicker">Risk discipline</span><h2>仓位规则暂不由基本面单点触发</h2></div>
+            <p>现有战术仓位框架继续作为历史对照。待基本面历史分位、发布日期和样本外检验完成后，再引入压力否决与仓位上限；在此之前不让低估值自动覆盖弱趋势。</p>
+          </section>
+        </main>
       </div>
-      <div class="topbar-actions">
-        <label class="toggle">
-          <input id="autoRefreshToggle" type="checkbox" checked />
-          <span>自动刷新</span>
-        </label>
-        <select id="refreshInterval" aria-label="刷新频率">
-          <option value="30">30 秒</option>
-          <option value="60" selected>60 秒</option>
-          <option value="120">2 分钟</option>
-          <option value="300">5 分钟</option>
-        </select>
-        <button id="refreshButton" type="button">刷新</button>
-      </div>
-    </header>
-
-    <main class="page-shell">
-      <section id="statusBanner" class="status-banner loading" aria-live="polite">
-        <strong>正在读取行情...</strong>
-        <span>数据会显示来源、时间戳和实时性标签。</span>
-      </section>
-
-      <section class="summary-grid" aria-label="市场总览">
-        <article class="score-panel">
-          <div class="panel-label">市场健康度</div>
-          <div class="score-row">
-            <div id="healthScore" class="score-value">--</div>
-            <div>
-              <div id="regimeLabel" class="regime-label">等待数据</div>
-              <div id="exposureGuide" class="exposure-guide">暂无仓位参考区间</div>
-            </div>
-          </div>
-          <div id="headlineTrend" class="score-history" aria-label="市场健康度历史趋势"></div>
-          <div class="score-meter" aria-hidden="true">
-            <span id="scoreMeterFill"></span>
-          </div>
-          <p id="scoreNarrative" class="narrative">
-            免费行情源通常是延迟快照，不应被当作交易级实时数据。
-          </p>
-        </article>
-
-        <article class="status-panel">
-          <div class="panel-label">数据状态</div>
-          <dl class="status-list">
-            <div>
-              <dt>来源</dt>
-              <dd id="dataSource">--</dd>
-            </div>
-            <div>
-              <dt>最近更新</dt>
-              <dd id="lastUpdated">--</dd>
-            </div>
-            <div>
-              <dt>实时性</dt>
-              <dd id="realtimeStatus">--</dd>
-            </div>
-            <div>
-              <dt>覆盖率</dt>
-              <dd id="coverageStatus">--</dd>
-            </div>
-          </dl>
-        </article>
-
-        <article class="watchlist-panel">
-          <div class="panel-label">观察池</div>
-          <textarea id="symbolInput" spellcheck="false" aria-label="观察池 symbols"></textarea>
-          <div class="watchlist-actions">
-            <button id="applySymbolsButton" type="button">应用观察池</button>
-            <button id="resetSymbolsButton" type="button" class="secondary">恢复默认</button>
-          </div>
-          <p class="field-help">默认使用 US ETF/指数代理市场广度、FRED 信用/利率、CBOE VIX、A 股宏观、港股离岸风险和 BTC spot。</p>
-        </article>
-      </section>
-
-      <section class="section-block">
-        <div class="section-heading">
-          <h2>四大板块</h2>
-          <p>主页只保留压缩总览；完整公式、底层输入和来源放在单独详情页。</p>
-          <nav class="segment-nav" aria-label="板块详情页">
-            <a href="us.html">美国详情</a>
-            <a href="china.html">中国详情</a>
-            <a href="hong-kong.html">香港/离岸详情</a>
-            <a href="crypto.html">加密/BTC详情</a>
-          </nav>
-        </div>
-        <div id="segmentsGrid" class="segments-grid"></div>
-      </section>
-
-      <section class="section-block">
-        <div class="section-heading">
-          <h2>市场组件</h2>
-          <p>价格、涨跌、趋势和数据质量分开显示。</p>
-        </div>
-        <div class="table-wrap">
-          <table>
-            <thead>
-              <tr>
-                <th>Symbol</th>
-                <th>市场角色</th>
-                <th>价格</th>
-                <th>日变化</th>
-                <th>Level</th>
-                <th>趋势</th>
-                <th>频率 / as-of</th>
-                <th>数据源</th>
-              </tr>
-            </thead>
-            <tbody id="marketTableBody"></tbody>
-          </table>
-        </div>
-      </section>
-
-      <section class="section-block two-column">
-        <article>
-          <div class="section-heading compact">
-            <h2>仓位框架</h2>
-            <p>这是规则化仪表盘输出，不是个性化投资建议。</p>
-          </div>
-          <div id="exposureBands" class="exposure-bands"></div>
-        </article>
-        <article>
-          <div class="section-heading compact">
-            <h2>运行记录</h2>
-            <p>失败的数据源会在这里暴露，不隐藏。</p>
-          </div>
-          <ul id="eventLog" class="event-log"></ul>
-        </article>
-      </section>
-    </main>
-
+    </div>
     <script src="config.js"></script>
     <script type="module" src="app.js"></script>
   </body>

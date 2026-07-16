@@ -13,7 +13,10 @@ test("dashboard homepage is compact and links to standalone segment pages", () =
   assert.match(html, /href="china.html"/);
   assert.match(html, /href="hong-kong.html"/);
   assert.match(html, /href="crypto.html"/);
-  assert.match(html, /id="headlineTrend"/);
+  assert.match(html, /id="pillarsGrid"/);
+  assert.match(html, /class="sidebar"/);
+  assert.match(html, /href="settings.html"/);
+  assert.doesNotMatch(html, /id="healthScore"/);
   assert.doesNotMatch(html, /每个板块都可以展开查看底层指标/);
 });
 
@@ -34,7 +37,7 @@ test("standalone segment detail pages declare the segment they render", () => {
 });
 
 test("all app pages load cloud runtime config before app module", () => {
-  for (const file of ["index.html", "us.html", "china.html", "hong-kong.html", "crypto.html"]) {
+  for (const file of ["index.html", "us.html", "china.html", "hong-kong.html", "crypto.html", "settings.html"]) {
     const html = readFileSync(resolve(root, file), "utf8");
     const configIndex = html.indexOf('src="config.js"');
     const appIndex = html.indexOf('src="app.js"');

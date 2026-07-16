@@ -108,6 +108,22 @@ test("adds unscored fundamental anchors without changing tactical indicator weig
   assert.equal(hk.indicators.reduce((sum, item) => sum + item.weight, 0), 100);
 });
 
+test("organizes every market into four non-rolled-up pillars", () => {
+  const model = buildMarketModel({ quotes: sampleQuotes, timestamp: "2026-06-29T01:00:00Z" });
+  for (const segment of model.segments) {
+    assert.deepEqual(segment.pillars.map((pillar) => pillar.id), ["price", "stress", "liquidity", "fundamental"]);
+    assert.equal(segment.pillars.find((pillar) => pillar.id === "fundamental").score, null);
+    assert.equal(segment.pillars.find((pillar) => pillar.id === "fundamental").observationOnly, true);
+  }
+  const us = model.segments.find((segment) => segment.id === "us");
+  assert.deepEqual(us.pillars.find((pillar) => pillar.id === "price").indicators.map((item) => item.id), [
+    "us_equity_trend", "us_pct_above_200dma", "us_market_breadth",
+  ]);
+  assert.deepEqual(us.pillars.find((pillar) => pillar.id === "stress").indicators.map((item) => item.id), [
+    "us_credit_spread", "us_rate_expectations", "us_vix_term_structure",
+  ]);
+});
+
 test("uses smoothed 5D and 20D rate-of-change instead of raw one-day change", () => {
   const model = buildMarketModel({ quotes: sampleQuotes, timestamp: "2026-06-29T01:00:00Z" });
   const equityTrend = model.signals.find((indicator) => indicator.id === "us_equity_trend");

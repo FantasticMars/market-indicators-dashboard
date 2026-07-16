@@ -67,6 +67,7 @@ const els = hasDocument ? {
   realtimeStatus: document.querySelector("#realtimeStatus"),
   coverageStatus: document.querySelector("#coverageStatus"),
   segmentsGrid: document.querySelector("#segmentsGrid"),
+  pillarsGrid: document.querySelector("#pillarsGrid"),
   segmentDetail: document.querySelector("#segmentDetail"),
   marketTableBody: document.querySelector("#marketTableBody"),
   exposureBands: document.querySelector("#exposureBands"),
@@ -82,6 +83,7 @@ function loadBandState() {
 }
 
 function init() {
+  ensureSidebar();
   const savedSymbols = localStorage.getItem("marketIndicators.symbols");
   if (savedSymbols) {
     state.instruments = parseSymbols(savedSymbols);
@@ -96,6 +98,32 @@ function init() {
   bindEvents();
   refreshDashboard();
   scheduleRefresh();
+}
+
+function ensureSidebar() {
+  if (!hasDocument || document.querySelector(".app-layout") || pageConfig.page !== "segment-detail") return;
+  const active = pageConfig.segmentId;
+  const links = [
+    ["us", "us.html", "美国"], ["china", "china.html", "A股 / 中国"],
+    ["hong_kong", "hong-kong.html", "港股 / 离岸"], ["crypto", "crypto.html", "加密资产"],
+  ];
+  const layout = document.createElement("div");
+  layout.className = "app-layout";
+  const sidebar = document.createElement("aside");
+  sidebar.className = "sidebar";
+  sidebar.innerHTML = `<a class="brand" href="index.html"><span>MI</span><strong>Market<br>Indicators</strong></a>
+    <nav class="side-nav"><a href="index.html">总览</a><span class="nav-section">市场</span>
+    ${links.map(([id, href, label]) => `<a class="${id === active ? "active" : ""}" href="${href}">${label}</a>`).join("")}
+    <span class="nav-section">系统</span><a href="settings.html">数据与设置</a></nav>`;
+  const main = document.createElement("div");
+  main.className = "app-main";
+  const header = document.querySelector(".topbar");
+  const page = document.querySelector("main");
+  layout.append(sidebar, main);
+  document.body.append(layout);
+  if (header) main.append(header);
+  if (page) main.append(page);
+  header?.querySelectorAll(".nav-button").forEach((node) => node.remove());
 }
 
 function applyRuntimeUi() {
@@ -405,6 +433,7 @@ function renderDashboard(model) {
   if (els.coverageStatus) els.coverageStatus.textContent = `${model.successful}/${model.components.length} symbols`;
 
   if (els.segmentsGrid) renderSegmentSummaries(model.segments, model.history);
+  if (els.pillarsGrid) renderPillarOverview(model.segments);
   if (els.segmentDetail) renderSegmentDetail(model.segments, model.history);
   if (els.marketTableBody) renderMarketTable(model.components);
   if (els.exposureBands) renderExposureBands(displayBand, model.bandState);
@@ -454,28 +483,59 @@ function renderSegmentSummaries(segments, history = []) {
       <div class="segment-head">
         <div>
           <div class="panel-label">${escapeHtml(segment.name)}</div>
-          <h3>${segment.score === null ? "--" : Math.round(segment.score)}<span>/100</span></h3>
+          <h3 class="market-state-title">${escapeHtml(marketStateLabel(segment))}</h3>
         </div>
-        <div class="segment-badges">
-          <span class="tag ${segment.status.tone}">${escapeHtml(segment.status.label)}</span>
-          <span class="tag ${segment.trend.tone}">${escapeHtml(segment.trend.symbol)} ${escapeHtml(segment.trend.label)}</span>
-        </div>
+        <span class="tag ${riskGate(segment).tone}">${escapeHtml(riskGate(segment).label)}</span>
       </div>
       <p class="segment-description">${escapeHtml(segment.description)}</p>
-      ${renderFundamentalSummary(segment.fundamentalAnchor)}
-      <div class="segment-formula">
-        <span>总分权重 ${formatWeight(segment.weight)}</span>
-        <span>可用子权重 ${formatWeight(segment.availableWeight)} / ${formatWeight(segment.totalWeight)}</span>
-        <span>confidence ${formatConfidence(segment.confidence)}</span>
-      </div>
-      ${renderScoreHistory(history, segment.id)}
-      <div class="mini-meter" aria-hidden="true"><span style="width:${segment.score === null ? 0 : clamp(segment.score, 0, 100)}%"></span></div>
-      <div class="summary-signal-list">
-        ${renderSummarySignals(segment)}
+      <div class="market-pillar-strip">
+        ${segment.pillars.map(renderPillarMini).join("")}
       </div>
       <a class="detail-link" href="${escapeAttribute(DETAIL_URLS[segment.id] || "index.html")}">查看${escapeHtml(segment.name)}详情</a>
     </article>
   `).join("");
+}
+
+function renderPillarOverview(segments) {
+  const pillarDefinitions = segments[0]?.pillars || [];
+  els.pillarsGrid.innerHTML = pillarDefinitions.map((pillar) => `
+    <article class="pillar-column">
+      <div class="pillar-number">0${pillarDefinitions.indexOf(pillar) + 1}</div>
+      <h3>${escapeHtml(pillar.name)}</h3>
+      <p>${escapeHtml(pillar.question)}</p>
+      <div class="pillar-market-list">
+        ${segments.map((segment) => {
+          const item = segment.pillars.find((candidate) => candidate.id === pillar.id);
+          return `<a href="${escapeAttribute(DETAIL_URLS[segment.id])}#pillar-${escapeAttribute(pillar.id)}">
+            <span>${escapeHtml(segment.name)}</span>
+            <strong class="${item?.status?.tone || "neutral"}">${item?.score === null ? escapeHtml(item?.status?.label || "--") : Math.round(item.score)}</strong>
+          </a>`;
+        }).join("")}
+      </div>
+    </article>
+  `).join("");
+}
+
+function renderPillarMini(pillar) {
+  return `<div class="pillar-mini"><span>${escapeHtml(pillar.name)}</span><strong>${pillar.score === null ? escapeHtml(pillar.status.label) : Math.round(pillar.score)}</strong></div>`;
+}
+
+function riskGate(segment) {
+  const stress = segment.pillars.find((pillar) => pillar.id === "stress")?.score;
+  if (!Number.isFinite(stress)) return { label: "压力待确认", tone: "neutral" };
+  if (stress < 30) return { label: "压力否决", tone: "bad" };
+  if (stress < 45) return { label: "限制风险", tone: "neutral" };
+  return { label: "压力可控", tone: "good" };
+}
+
+function marketStateLabel(segment) {
+  const price = segment.pillars.find((pillar) => pillar.id === "price")?.score;
+  const stress = segment.pillars.find((pillar) => pillar.id === "stress")?.score;
+  if (!Number.isFinite(price)) return "等待确认";
+  if (price >= 60 && Number.isFinite(stress) && stress < 45) return "脆弱上涨";
+  if (price >= 60) return "趋势确认";
+  if (price < 40) return "防御观察";
+  return "中性分歧";
 }
 
 function renderSummarySignals(segment) {
@@ -501,28 +561,30 @@ function renderSegmentDetail(segments, history = []) {
       <div class="segment-head">
         <div>
           <div class="panel-label">${escapeHtml(segment.name)}</div>
-          <h3>${segment.score === null ? "--" : Math.round(segment.score)}<span>/100</span></h3>
+          <h3 class="market-state-title">${escapeHtml(marketStateLabel(segment))}</h3>
         </div>
         <div class="segment-badges">
-          <span class="tag ${segment.status.tone}">${escapeHtml(segment.status.label)}</span>
-          <span class="tag ${segment.trend.tone}">${escapeHtml(segment.trend.symbol)} ${escapeHtml(segment.trend.label)}</span>
+          <span class="tag ${riskGate(segment).tone}">${escapeHtml(riskGate(segment).label)}</span>
         </div>
       </div>
       <p class="segment-description">${escapeHtml(segment.description)}</p>
-      <div class="segment-formula">
-        <span>总分权重 ${formatWeight(segment.weight)}</span>
-        <span>可用子权重 ${formatWeight(segment.availableWeight)} / ${formatWeight(segment.totalWeight)}</span>
-        <span>confidence ${formatConfidence(segment.confidence)}</span>
-        <span>${escapeHtml(segment.formula)}</span>
-      </div>
-      ${renderScoreHistory(history, segment.id)}
       ${renderObservationNotes(segment.observationNotes)}
-      ${renderFundamentalAnchor(segment.fundamentalAnchor)}
-      <div class="indicator-list detail-indicator-list">
-        ${segment.indicators.map(renderIndicator).join("")}
-      </div>
+      <div class="pillar-detail-list">${segment.pillars.map((pillar) => renderPillarDetail(pillar, segment)).join("")}</div>
     </article>
   `;
+}
+
+function renderPillarDetail(pillar, segment) {
+  const content = pillar.id === "fundamental"
+    ? renderFundamentalAnchor(segment.fundamentalAnchor) || `<p class="pillar-empty">${escapeHtml(pillar.note)}</p>`
+    : pillar.indicators.length
+      ? `<div class="indicator-list">${pillar.indicators.map(renderIndicator).join("")}</div>`
+      : `<p class="pillar-empty">${escapeHtml(pillar.note)}</p>`;
+  return `<section id="pillar-${escapeAttribute(pillar.id)}" class="pillar-detail-section">
+    <div class="pillar-detail-head"><div><span class="section-kicker">${escapeHtml(pillar.question)}</span><h2>${escapeHtml(pillar.name)}</h2></div>
+    <span class="pillar-detail-score ${pillar.status.tone}">${pillar.score === null ? escapeHtml(pillar.status.label) : `${Math.round(pillar.score)} / 100`}</span></div>
+    ${content}
+  </section>`;
 }
 
 function renderFundamentalSummary(anchor) {

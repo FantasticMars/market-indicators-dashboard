@@ -383,10 +383,74 @@ function buildSegments(components) {
       trend,
       confidence,
       indicators,
+      pillars: buildPillars(definition.id, indicators, buildFundamentalAnchor(definition.id, bySymbol)),
       availableWeight,
       totalWeight,
       observationNotes: definition.observationNotes || [],
       fundamentalAnchor: buildFundamentalAnchor(definition.id, bySymbol),
+    };
+  });
+}
+
+const PILLAR_DEFINITIONS = [
+  { id: "price", name: "价格确认", question: "趋势是否成立，而且有足够广度参与？" },
+  { id: "stress", name: "金融压力", question: "信用、波动率和跨市场压力是否正在收紧？" },
+  { id: "liquidity", name: "宏观流动性", question: "货币、信用与资金流是否提供支持？" },
+  { id: "fundamental", name: "基本面", question: "估值、盈利与质量是否提供长期赔率？" },
+];
+
+const PILLAR_INDICATORS = {
+  us: {
+    price: ["us_equity_trend", "us_pct_above_200dma", "us_market_breadth"],
+    stress: ["us_credit_spread", "us_rate_expectations", "us_vix_term_structure"],
+    liquidity: [],
+  },
+  china: {
+    price: ["china_a_share", "china_pct_above_200dma"],
+    stress: ["china_fx_flow"],
+    liquidity: ["china_m1_m2_gap", "china_corporate_mlt_credit", "china_deposit_rotation"],
+  },
+  hong_kong: {
+    price: ["hk_market_trend", "hk_pct_above_200dma", "hk_offshore_consistency"],
+    stress: ["hk_offshore_china_risk"],
+    liquidity: [],
+  },
+  crypto: {
+    price: ["btc_trend", "btc_momentum"],
+    stress: ["btc_drawdown_risk"],
+    liquidity: [],
+  },
+};
+
+function buildPillars(segmentId, indicators, fundamentalAnchor) {
+  const byId = new Map(indicators.map((item) => [item.id, item]));
+  const mapping = PILLAR_INDICATORS[segmentId] || {};
+  return PILLAR_DEFINITIONS.map((definition) => {
+    if (definition.id === "fundamental") {
+      return {
+        ...definition,
+        score: null,
+        status: fundamentalAnchor?.ok
+          ? { label: "观察中", tone: "neutral" }
+          : { label: "数据不足", tone: "neutral" },
+        indicators: [],
+        observationOnly: true,
+        note: segmentId === "crypto"
+          ? "加密资产没有企业盈利与ROE，不套用股票基本面框架。"
+          : fundamentalAnchor?.ok
+            ? "已有当期快照；待积累历史分位后再评分，不参与仓位。"
+            : "基本面快照不可用。",
+      };
+    }
+    const members = (mapping[definition.id] || []).map((id) => byId.get(id)).filter(Boolean);
+    const score = weightedAverage(members);
+    return {
+      ...definition,
+      score,
+      status: scoreLabel(score),
+      indicators: members,
+      observationOnly: false,
+      note: members.length ? `${members.length} 组独立经济信号` : "当前没有可靠、可持续更新的数据源。",
     };
   });
 }
