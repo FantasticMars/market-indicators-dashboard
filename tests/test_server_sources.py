@@ -9,6 +9,28 @@ import server
 
 
 class ServerSourceTransformTests(unittest.TestCase):
+    def test_fundamental_metrics_aggregate_market_cap_income_and_equity(self):
+        rows = [
+            {"d": ["A", 600, 30, 150, 20, 2]},
+            {"d": ["B", 400, -10, 100, -5, 4]},
+        ]
+
+        metrics = server.fundamental_metrics_from_rows(rows)
+
+        self.assertEqual(metrics["constituent_count"], 2)
+        self.assertEqual(metrics["earnings_yield_pct"], 2.0)
+        self.assertEqual(metrics["aggregate_pe_ttm"], 50.0)
+        self.assertEqual(metrics["aggregate_pb"], 4.0)
+        self.assertEqual(metrics["aggregate_roe_pct"], 8.0)
+        self.assertEqual(metrics["earnings_growth_weighted_median_pct"], 20.0)
+        self.assertEqual(metrics["dividend_yield_weighted_pct"], 2.8)
+        self.assertEqual(metrics["profitable_market_cap_pct"], 60.0)
+
+    def test_fundamental_universes_match_index_groups(self):
+        self.assertEqual(server.FUNDAMENTAL_SYMBOLS["SP500_FUNDAMENTALS"]["group"], "SP:SPX")
+        self.assertEqual(server.FUNDAMENTAL_SYMBOLS["CSI300_FUNDAMENTALS"]["group"], "SSE:000300")
+        self.assertEqual(server.FUNDAMENTAL_SYMBOLS["HSCEI_FUNDAMENTALS"]["group"], "HSI:HSCEI")
+
     def test_tradingview_breadth_calculates_percent_from_constituents(self):
         original_post_json = server.post_json
         try:

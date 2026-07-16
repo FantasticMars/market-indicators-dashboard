@@ -98,6 +98,33 @@ BREADTH_SYMBOLS = {
     },
 }
 
+FUNDAMENTAL_SYMBOLS = {
+    "SP500_FUNDAMENTALS": {
+        "name": "S&P 500 fundamental anchor",
+        "market": "US",
+        "scanner_market": "america",
+        "group": "SP:SPX",
+        "currency": "USD",
+        "source_url": "https://www.tradingview.com/markets/stocks-usa/market-movers-all-stocks/",
+    },
+    "CSI300_FUNDAMENTALS": {
+        "name": "CSI 300 fundamental anchor",
+        "market": "CN",
+        "scanner_market": "china",
+        "group": "SSE:000300",
+        "currency": "CNY",
+        "source_url": "https://www.tradingview.com/markets/stocks-china/market-movers-all-stocks/",
+    },
+    "HSCEI_FUNDAMENTALS": {
+        "name": "HSCEI fundamental anchor",
+        "market": "HK",
+        "scanner_market": "hongkong",
+        "group": "HSI:HSCEI",
+        "currency": "HKD",
+        "source_url": "https://www.hsi.com.hk/eng/indexes/all-indexes/hscei",
+    },
+}
+
 FRED_SERIES = {
     "HY_OAS": {
         "series": "BAMLH0A0HYM2",
@@ -534,13 +561,15 @@ def error_quote(symbol: str, message: str) -> dict[str, Any]:
 
 def is_special_symbol(symbol: str) -> bool:
     upper = symbol.upper()
-    return upper in BREADTH_SYMBOLS or upper in CHINA_MACRO_SYMBOLS or upper in FRED_SERIES or upper in CBOE_SYMBOLS or upper == "BTC"
+    return upper in BREADTH_SYMBOLS or upper in FUNDAMENTAL_SYMBOLS or upper in CHINA_MACRO_SYMBOLS or upper in FRED_SERIES or upper in CBOE_SYMBOLS or upper == "BTC"
 
 
 def special_quote(symbol: str) -> dict[str, Any]:
     upper = symbol.upper()
     if upper in BREADTH_SYMBOLS:
         return tradingview_breadth_quote(upper)
+    if upper in FUNDAMENTAL_SYMBOLS:
+        return tradingview_fundamental_quote(upper)
     if upper in FRED_SERIES:
         return fred_quote(upper)
     if upper in CBOE_SYMBOLS:
@@ -607,6 +636,161 @@ def tradingview_breadth_quote(symbol: str) -> dict[str, Any]:
         }
     except Exception as exc:
         return error_quote_for_special(symbol, config["name"], "%", config["source_url"], f"TradingView breadth scan failed: {exc}")
+
+
+def tradingview_fundamental_quote(symbol: str) -> dict[str, Any]:
+    config = FUNDAMENTAL_SYMBOLS[symbol]
+    scanner_market = config["scanner_market"]
+    columns = [
+        "name",
+        "market_cap_basic",
+        "net_income_ttm",
+        "total_equity_fq",
+        "net_income_yoy_growth_ttm",
+        "dividends_yield_current",
+    ]
+    payload = {
+        "filter": [],
+        "options": {"lang": "en"},
+        "markets": [scanner_market],
+        "symbols": {
+            "query": {"types": []},
+            "tickers": [],
+            "groups": [{"type": "index", "values": [config["group"]]}],
+        },
+        "columns": columns,
+        "range": [0, 10000],
+    }
+    url = f"{TRADINGVIEW_SCANNER_BASE}/{scanner_market}/scan"
+    try:
+        response = post_json(url, payload)
+        rows = response.get("data") or []
+        metrics = fundamental_metrics_from_rows(rows)
+        if metrics["constituent_count"] == 0 or metrics["market_cap_total"] <= 0:
+            raise ValueError("scanner returned no constituents with market capitalization")
+        timestamp = now_iso()
+        transport_note = response.get("_transport_note")
+        source = f"{TRADINGVIEW_BREADTH_SOURCE} ({transport_note})" if transport_note else TRADINGVIEW_BREADTH_SOURCE
+        return {
+            "ok": True,
+            "symbol": symbol,
+            "name": config["name"],
+            "market": config["market"],
+            "currency": "%",
+            "price": metrics["earnings_yield_pct"],
+            "source": source,
+            "source_url": config["source_url"],
+            "timestamp": timestamp,
+            "quote_timestamp": timestamp,
+            "as_of_date": today_label(),
+            "realtime_status": "fundamental_snapshot_delayed_or_unknown",
+            "frequency": "daily snapshot; interpret monthly",
+            "metric_direction": "higher_is_better",
+            "metric_basis": "market_cap_aggregated_fundamentals",
+            "confidence": metrics["confidence"],
+            "fundamentals": {
+                **metrics,
+                "universe": config["name"].replace(" fundamental anchor", ""),
+                "financial_currency": config["currency"],
+                "score_status": "history_building_not_scored",
+            },
+            "detail": (
+                f"Aggregated from {metrics['constituent_count']} constituents; "
+                f"earnings coverage {metrics['earnings_coverage_pct']:.1f}% of market cap and "
+                f"equity coverage {metrics['equity_coverage_pct']:.1f}%. Not included in the tactical score."
+            ),
+        }
+    except Exception as exc:
+        return error_quote_for_special(symbol, config["name"], "%", config["source_url"], f"TradingView fundamental scan failed: {exc}")
+
+
+def fundamental_metrics_from_rows(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    parsed: list[dict[str, float | None]] = []
+    for row in rows:
+        values = row.get("d") or []
+        if len(values) < 6:
+            continue
+        market_cap = to_number(values[1])
+        if market_cap is None or market_cap <= 0:
+            continue
+        parsed.append({
+            "market_cap": market_cap,
+            "net_income": to_number(values[2]),
+            "equity": to_number(values[3]),
+            "earnings_growth": to_number(values[4]),
+            "dividend_yield": to_number(values[5]),
+        })
+
+    total_cap = sum(float(row["market_cap"] or 0) for row in parsed)
+    earnings_rows = [row for row in parsed if row["net_income"] is not None]
+    earnings_cap = sum(float(row["market_cap"] or 0) for row in earnings_rows)
+    net_income = sum(float(row["net_income"] or 0) for row in earnings_rows)
+    earnings_yield = net_income / earnings_cap * 100 if earnings_cap > 0 else None
+    aggregate_pe = 100 / earnings_yield if earnings_yield is not None and earnings_yield > 0 else None
+
+    equity_rows = [row for row in earnings_rows if row["equity"] is not None and float(row["equity"] or 0) > 0]
+    equity_cap = sum(float(row["market_cap"] or 0) for row in equity_rows)
+    equity_total = sum(float(row["equity"] or 0) for row in equity_rows)
+    equity_net_income = sum(float(row["net_income"] or 0) for row in equity_rows)
+    aggregate_roe = equity_net_income / equity_total * 100 if equity_total > 0 else None
+    aggregate_pb = equity_cap / equity_total if equity_total > 0 else None
+
+    growth_rows = [
+        (float(row["earnings_growth"]), float(row["market_cap"] or 0))
+        for row in parsed
+        if row["earnings_growth"] is not None and -200 <= float(row["earnings_growth"]) <= 500
+    ]
+    growth_cap = sum(weight for _, weight in growth_rows)
+    earnings_growth = weighted_median(growth_rows)
+
+    dividend_rows = [
+        (float(row["dividend_yield"]), float(row["market_cap"] or 0))
+        for row in parsed
+        if row["dividend_yield"] is not None and 0 <= float(row["dividend_yield"]) <= 30
+    ]
+    dividend_cap = sum(weight for _, weight in dividend_rows)
+    dividend_yield = (
+        sum(value * weight for value, weight in dividend_rows) / dividend_cap
+        if dividend_cap > 0 else None
+    )
+    profitable_cap = sum(float(row["market_cap"] or 0) for row in earnings_rows if float(row["net_income"] or 0) > 0)
+
+    earnings_coverage = earnings_cap / total_cap * 100 if total_cap > 0 else 0
+    equity_coverage = equity_cap / total_cap * 100 if total_cap > 0 else 0
+    growth_coverage = growth_cap / total_cap * 100 if total_cap > 0 else 0
+    minimum_coverage = min(earnings_coverage, equity_coverage, growth_coverage)
+    return {
+        "constituent_count": len(parsed),
+        "market_cap_total": total_cap,
+        "earnings_yield_pct": round_optional(earnings_yield),
+        "aggregate_pe_ttm": round_optional(aggregate_pe),
+        "aggregate_pb": round_optional(aggregate_pb),
+        "aggregate_roe_pct": round_optional(aggregate_roe),
+        "earnings_growth_weighted_median_pct": round_optional(earnings_growth),
+        "dividend_yield_weighted_pct": round_optional(dividend_yield),
+        "profitable_market_cap_pct": round_optional(profitable_cap / earnings_cap * 100 if earnings_cap > 0 else None),
+        "earnings_coverage_pct": round(earnings_coverage, 2),
+        "equity_coverage_pct": round(equity_coverage, 2),
+        "growth_coverage_pct": round(growth_coverage, 2),
+        "confidence": round(min(0.92, 0.55 + minimum_coverage / 250), 2),
+    }
+
+
+def weighted_median(values: list[tuple[float, float]]) -> float | None:
+    if not values:
+        return None
+    ordered = sorted(values, key=lambda item: item[0])
+    midpoint = sum(weight for _, weight in ordered) / 2
+    cumulative = 0.0
+    for value, weight in ordered:
+        cumulative += weight
+        if cumulative >= midpoint:
+            return value
+    return ordered[-1][0]
+
+
+def round_optional(value: float | None, digits: int = 2) -> float | None:
+    return round(value, digits) if value is not None else None
 
 
 def is_number(value: Any) -> bool:
@@ -1445,6 +1629,8 @@ def append_score_history(point: dict[str, Any], path: Path = HISTORY_FILE, limit
 
 def market_for_symbol(symbol: str) -> str:
     upper = symbol.upper()
+    if upper in FUNDAMENTAL_SYMBOLS:
+        return FUNDAMENTAL_SYMBOLS[upper]["market"]
     if upper in BREADTH_SYMBOLS:
         return BREADTH_SYMBOLS[upper]["market"]
     if upper in CHINA_MACRO_SYMBOLS:
@@ -1498,6 +1684,8 @@ def source_url_for_symbol(symbol: str, mapped_symbol: str) -> str:
         return CHINA_MACRO_SOURCE_URLS.get(symbol.upper(), PBC_CATEGORY_URLS[2026]["money"])
     if symbol.upper() in BREADTH_SYMBOLS:
         return BREADTH_SYMBOLS[symbol.upper()]["source_url"]
+    if symbol.upper() in FUNDAMENTAL_SYMBOLS:
+        return FUNDAMENTAL_SYMBOLS[symbol.upper()]["source_url"]
     if symbol.upper() == "BTC":
         return "https://www.coingecko.com/en/coins/bitcoin"
     return f"https://gu.qq.com/{mapped_symbol}"
