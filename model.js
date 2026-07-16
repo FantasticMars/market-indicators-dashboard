@@ -4,6 +4,7 @@ export const DEFAULT_INSTRUMENTS = [
   { symbol: "IWM", name: "Russell 2000 ETF", role: "Small-cap breadth", group: "risk", segment: "us" },
   { symbol: "RSP", name: "S&P 500 Equal Weight ETF", role: "Market breadth", group: "breadth", segment: "us" },
   { symbol: "SPXA200R", name: "S&P 500 % above 200DMA", role: "Direct market breadth", group: "breadth", segment: "us" },
+  { symbol: "SP500_FUNDAMENTALS", name: "S&P 500 Fundamental Anchor", role: "Valuation and profitability", group: "fundamental", segment: "us" },
   { symbol: "HY_OAS", name: "ICE BofA US High Yield OAS", role: "Credit spread", group: "credit", segment: "us" },
   { symbol: "DGS10", name: "10Y Treasury yield", role: "Long-rate level", group: "rates", segment: "us" },
   { symbol: "T10Y2Y", name: "2s10s Treasury curve", role: "Curve slope", group: "rates", segment: "us" },
@@ -13,12 +14,14 @@ export const DEFAULT_INSTRUMENTS = [
   { symbol: "SHCOMP", name: "Shanghai Composite", role: "A-share broad market", group: "china", segment: "china" },
   { symbol: "CSI300", name: "CSI 300", role: "A-share large caps", group: "china", segment: "china" },
   { symbol: "CSI300A200R", name: "CSI 300 % above 200DMA", role: "A-share breadth", group: "breadth", segment: "china" },
+  { symbol: "CSI300_FUNDAMENTALS", name: "CSI 300 Fundamental Anchor", role: "Valuation and profitability", group: "fundamental", segment: "china" },
   { symbol: "CN_M1_M2_GAP", name: "M1-M2 growth gap", role: "Money activation", group: "macro", segment: "china" },
   { symbol: "CN_CORP_MLT_LOAN_YOY", name: "Corporate mid/long loan YoY", role: "Credit impulse", group: "credit", segment: "china" },
   { symbol: "CN_HOUSEHOLD_NBFI_DEPOSIT_GAP", name: "Household vs NBFI deposit gap", role: "Deposit rotation", group: "funds", segment: "china" },
   { symbol: "CN_FX_SETTLEMENT_FLOW", name: "FX settlement surplus + CNY", role: "External flow", group: "external", segment: "china" },
   { symbol: "HSI", name: "Hang Seng Index", role: "Hong Kong market", group: "hk", segment: "hong_kong" },
   { symbol: "HKA200R", name: "Hong Kong primary stocks % above 200DMA", role: "Hong Kong breadth", group: "breadth", segment: "hong_kong" },
+  { symbol: "HSCEI_FUNDAMENTALS", name: "HSCEI Fundamental Anchor", role: "H-share valuation and profitability", group: "fundamental", segment: "hong_kong" },
   { symbol: "FXI", name: "China Large-Cap ETF", role: "Offshore China risk", group: "global", segment: "hong_kong" },
   { symbol: "KWEB", name: "China Internet ETF", role: "China growth proxy", group: "global", segment: "hong_kong" },
   { symbol: "BTC", name: "Bitcoin spot", role: "24/7 BTC spot risk", group: "crypto", segment: "crypto" },
@@ -49,7 +52,7 @@ const SEGMENT_DEFINITIONS = [
     observationNotes: [
       {
         title: "估值观察：10Y 国债收益率 + ERP",
-        body: "10Y 国债收益率有 PBOC 中债国债收益统计表来源；ERP 还需要稳定、可自动验证的指数盈利收益率或 PE 数据源，当前不纳入分数。",
+        body: "沪深300盈利收益率现已由成分股TTM净利润与市值聚合；本地10Y国债自动源仍待验证，因此ERP暂留空且不纳入分数。",
         sourceUrl: "https://www.pbc.gov.cn/diaochatongjisi/116219/116319/2026ntjsj/jrsctj/index.html",
       },
     ],
@@ -104,6 +107,13 @@ export function buildHistoryPoint(model) {
         score: segment.score,
         trend: segment.trend.direction,
         confidence: segment.confidence,
+        fundamentals: segment.fundamentalAnchor?.ok
+          ? {
+              observedAt: segment.fundamentalAnchor.observedAt,
+              metrics: Object.fromEntries(segment.fundamentalAnchor.metrics.map((metric) => [metric.id, metric.value])),
+              scoreStatus: segment.fundamentalAnchor.scoreStatus,
+            }
+          : null,
       },
     ])),
   };
@@ -215,6 +225,7 @@ function buildComponent(instrument, quote = {}, quotesPayload = {}) {
     sourceUrl: quote.source_url || quote.verify_url || "",
     realtimeStatus: quote.realtime_status || quotesPayload.realtime_status || "unknown",
     detail: quote.detail || null,
+    fundamentals: quote.fundamentals || null,
     history,
   };
 }
@@ -375,8 +386,59 @@ function buildSegments(components) {
       availableWeight,
       totalWeight,
       observationNotes: definition.observationNotes || [],
+      fundamentalAnchor: buildFundamentalAnchor(definition.id, bySymbol),
     };
   });
+}
+
+function buildFundamentalAnchor(segmentId, bySymbol) {
+  const symbol = {
+    us: "SP500_FUNDAMENTALS",
+    china: "CSI300_FUNDAMENTALS",
+    hong_kong: "HSCEI_FUNDAMENTALS",
+  }[segmentId];
+  if (!symbol) return null;
+  const component = bySymbol.get(symbol);
+  const data = component?.fundamentals;
+  if (!component?.ok || !data) {
+    return {
+      ok: false,
+      symbol,
+      title: segmentId === "hong_kong" ? "恒生国企指数基本面锚" : "指数基本面锚",
+      error: component?.error || "基本面数据不可用",
+      sourceName: component?.source || "unavailable",
+      sourceUrl: component?.sourceUrl || "",
+      observedAt: component?.asOfDate || component?.quoteTimestamp || null,
+      realtimeStatus: component?.realtimeStatus || "unavailable",
+      metrics: [],
+    };
+  }
+  const treasuryYield = segmentId === "us" ? numberOrNull(bySymbol.get("DGS10")?.price) : null;
+  const earningsYield = numberOrNull(data.earnings_yield_pct);
+  const erp = isFiniteNumber(earningsYield) && isFiniteNumber(treasuryYield) ? earningsYield - treasuryYield : null;
+  return {
+    ok: true,
+    symbol,
+    title: `${data.universe} 基本面锚`,
+    subtitle: "慢速估值与盈利观察；历史样本积累完成前不计入战术分或仓位区间。",
+    scoreStatus: data.score_status,
+    sourceName: component.source,
+    sourceUrl: component.sourceUrl,
+    observedAt: component.asOfDate || component.quoteTimestamp,
+    realtimeStatus: component.realtimeStatus,
+    confidence: component.confidence,
+    detail: component.detail,
+    metrics: [
+      { id: "earnings_yield", label: "盈利收益率", value: earningsYield, suffix: "%", note: "成分股TTM净利润合计 / 对应总市值" },
+      { id: "erp", label: "简化ERP", value: erp, suffix: "ppt", note: segmentId === "us" ? "盈利收益率 − 美国10Y国债" : "等待可靠的本地10Y国债自动源，不使用代理值" },
+      { id: "earnings_growth", label: "盈利同比", value: numberOrNull(data.earnings_growth_weighted_median_pct), suffix: "%", note: "按市值加权中位数；限制极端值，降低亏损反转噪音" },
+      { id: "roe", label: "聚合ROE", value: numberOrNull(data.aggregate_roe_pct), suffix: "%", note: "有正权益覆盖的成分股净利润合计 / 股东权益合计" },
+      { id: "pe", label: "聚合TTM P/E", value: numberOrNull(data.aggregate_pe_ttm), suffix: "x", note: "由聚合盈利收益率倒数计算" },
+      { id: "pb", label: "聚合P/B", value: numberOrNull(data.aggregate_pb), suffix: "x", note: "对应市值合计 / 正股东权益合计" },
+      { id: "dividend_yield", label: "股息率", value: numberOrNull(data.dividend_yield_weighted_pct), suffix: "%", note: "市值加权，仅展示、不重复计分" },
+      { id: "profitable_breadth", label: "盈利市值占比", value: numberOrNull(data.profitable_market_cap_pct), suffix: "%", note: "TTM净利润为正的公司占有效覆盖市值比例" },
+    ],
+  };
 }
 
 function indicator({ id, name, weight, inputs, description, formula, scoreOverride = undefined }) {

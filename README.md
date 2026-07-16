@@ -51,9 +51,9 @@ Free market data should be treated as delayed/snapshot data. For trading-grade l
 
 The initial dashboard is organized into four panels:
 
-- United States: `SPY`, `QQQ`, `IWM`, `RSP`, `SPXA200R`, `HY_OAS`, `DGS10`, `T10Y2Y`, `VIX`, `VIX3M`, `VIX9D`
-- China: `SHCOMP`, `CSI300`, `CSI300A200R`, `CN_M1_M2_GAP`, `CN_CORP_MLT_LOAN_YOY`, `CN_HOUSEHOLD_NBFI_DEPOSIT_GAP`, `CN_FX_SETTLEMENT_FLOW`
-- Hong Kong / offshore China: `HSI`, `HKA200R`, `FXI`, `KWEB`
+- United States: `SPY`, `QQQ`, `IWM`, `RSP`, `SPXA200R`, `SP500_FUNDAMENTALS`, `HY_OAS`, `DGS10`, `T10Y2Y`, `VIX`, `VIX3M`, `VIX9D`
+- China: `SHCOMP`, `CSI300`, `CSI300A200R`, `CSI300_FUNDAMENTALS`, `CN_M1_M2_GAP`, `CN_CORP_MLT_LOAN_YOY`, `CN_HOUSEHOLD_NBFI_DEPOSIT_GAP`, `CN_FX_SETTLEMENT_FLOW`
+- Hong Kong / offshore China: `HSI`, `HKA200R`, `HSCEI_FUNDAMENTALS`, `FXI`, `KWEB`
 - Crypto / BTC: `BTC`, mapped to 24/7 spot BTC through CoinGecko or Coinbase fallback
 
 The homepage is a compact dashboard. Each standalone panel page can be expanded down to indicator inputs. Each input shows value, 5D/20D ROC when history is available, level score, native frequency, as-of date, confidence, source link, and data detail.
@@ -126,6 +126,32 @@ The dashboard calculates breadth directly from TradingView Stock Screener rows i
 - `HKA200R`: primary common stocks listed in Hong Kong. TradingView's scanner did not return a usable Hang Seng constituent group during verification, so this is explicitly a broad Hong Kong market measure rather than a Hang Seng or pure H-share measure.
 
 These are daily scanner snapshots with delayed/unknown real-time status, not trading-grade live feeds. Each response includes the valid-security numerator/denominator, retrieval timestamp, source link, and an explicit failure state if the scanner is unavailable.
+
+## Fundamental Anchor (Observation-Only Phase)
+
+The U.S., China, and Hong Kong detail pages include a separate slow-moving fundamental anchor. It is deliberately excluded from the tactical health score and exposure band while point-in-time history is accumulated and the source is monitored for stability.
+
+Universes:
+
+- `SP500_FUNDAMENTALS`: TradingView index group `SP:SPX`.
+- `CSI300_FUNDAMENTALS`: TradingView index group `SSE:000300`.
+- `HSCEI_FUNDAMENTALS`: TradingView index group `HSI:HSCEI`; this is the 50-member Hang Seng China Enterprises Index rather than the broad Hong Kong market.
+
+For each universe, the proxy requests constituent market capitalization, TTM net income, latest equity, TTM net-income growth, and dividend yield. It calculates:
+
+- Earnings yield = sum(TTM net income) / sum(market capitalization) for constituents with both fields.
+- Aggregate P/E = inverse of aggregate earnings yield when earnings yield is positive.
+- Aggregate ROE = sum(TTM net income) / sum(positive shareholder equity) for the matched subset.
+- Aggregate P/B = matched market capitalization / positive shareholder equity.
+- Earnings growth = market-cap-weighted median constituent TTM net-income growth, excluding values outside -200% to +500% to reduce sign-change and outlier noise.
+- Dividend yield = market-cap-weighted constituent yield; display only.
+- Profitable market-cap breadth = market capitalization with positive TTM net income / market capitalization with reported TTM net income.
+
+Every snapshot reports market-cap coverage separately for earnings, equity, and growth. Missing sources remain missing. The simplified ERP is shown only when a verified local 10-year sovereign yield is available; no cross-market proxy is substituted.
+
+Daily snapshot history now stores these raw metrics alongside each regional score. A later scoring phase should use monthly point-in-time observations and each universe's own historical percentile; it must not use fixed cross-market P/E thresholds.
+
+Alpaca was evaluated but not selected for this layer. Its Market Data API covers real-time/historical U.S. equities, options, crypto, and news, while this feature needs A-share/H-share constituents and financial-statement-derived index valuation and profitability. It remains a possible future U.S. price-feed enhancement, not a fundamental source.
 
 ## FRED Limitation
 

@@ -37,7 +37,10 @@ const LEGACY_DEFAULT_SYMBOLS = [
 const PRE_MACRO_DEFAULT_SYMBOLS = [...LEGACY_DEFAULT_SYMBOLS, "SPXA200R"];
 const PRE_REGIONAL_BREADTH_DEFAULT_SYMBOLS = DEFAULT_INSTRUMENTS
   .map((item) => item.symbol)
-  .filter((symbol) => !["CSI300A200R", "HKA200R"].includes(symbol));
+  .filter((symbol) => !["CSI300A200R", "HKA200R", "SP500_FUNDAMENTALS", "CSI300_FUNDAMENTALS", "HSCEI_FUNDAMENTALS"].includes(symbol));
+const PRE_FUNDAMENTAL_DEFAULT_SYMBOLS = DEFAULT_INSTRUMENTS
+  .map((item) => item.symbol)
+  .filter((symbol) => !["SP500_FUNDAMENTALS", "CSI300_FUNDAMENTALS", "HSCEI_FUNDAMENTALS"].includes(symbol));
 const PRE_NATIVE_DEFAULT_SYMBOLS = [
   "SPY", "QQQ", "IWM", "RSP", "SPXA200R", "HYG", "TLT", "SHY", "VXX",
   "SHCOMP", "CSI300", "HSI", "FXI", "KWEB",
@@ -135,6 +138,9 @@ function isLegacyDefaultSymbols(value) {
   ) || (
     set.size === PRE_REGIONAL_BREADTH_DEFAULT_SYMBOLS.length
     && PRE_REGIONAL_BREADTH_DEFAULT_SYMBOLS.every((symbol) => set.has(symbol))
+  ) || (
+    set.size === PRE_FUNDAMENTAL_DEFAULT_SYMBOLS.length
+    && PRE_FUNDAMENTAL_DEFAULT_SYMBOLS.every((symbol) => set.has(symbol))
   ) || (
     hasDeprecatedDefault
       && !hasNativeDefault
@@ -456,6 +462,7 @@ function renderSegmentSummaries(segments, history = []) {
         </div>
       </div>
       <p class="segment-description">${escapeHtml(segment.description)}</p>
+      ${renderFundamentalSummary(segment.fundamentalAnchor)}
       <div class="segment-formula">
         <span>总分权重 ${formatWeight(segment.weight)}</span>
         <span>可用子权重 ${formatWeight(segment.availableWeight)} / ${formatWeight(segment.totalWeight)}</span>
@@ -510,11 +517,64 @@ function renderSegmentDetail(segments, history = []) {
       </div>
       ${renderScoreHistory(history, segment.id)}
       ${renderObservationNotes(segment.observationNotes)}
+      ${renderFundamentalAnchor(segment.fundamentalAnchor)}
       <div class="indicator-list detail-indicator-list">
         ${segment.indicators.map(renderIndicator).join("")}
       </div>
     </article>
   `;
+}
+
+function renderFundamentalSummary(anchor) {
+  if (!anchor) return "";
+  if (!anchor.ok) return `<div class="fundamental-summary unavailable"><strong>基本面锚</strong><span>数据不可用，不影响战术分</span></div>`;
+  const primary = anchor.metrics.filter((metric) => ["earnings_yield", "earnings_growth", "roe"].includes(metric.id));
+  return `
+    <div class="fundamental-summary">
+      <strong>基本面锚 · 暂不计分</strong>
+      <span>${primary.map((metric) => `${escapeHtml(metric.label)} ${formatFundamentalValue(metric)}`).join(" · ")}</span>
+    </div>
+  `;
+}
+
+function renderFundamentalAnchor(anchor) {
+  if (!anchor) return "";
+  if (!anchor.ok) {
+    return `
+      <section class="fundamental-anchor unavailable">
+        <div><span class="panel-label">基本面锚 · 暂不计分</span><h3>${escapeHtml(anchor.title)}</h3></div>
+        <p>${escapeHtml(anchor.error || "数据不可用")}</p>
+      </section>
+    `;
+  }
+  return `
+    <section class="fundamental-anchor">
+      <div class="fundamental-anchor-head">
+        <div><span class="panel-label">基本面锚 · 暂不计分</span><h3>${escapeHtml(anchor.title)}</h3></div>
+        <span class="tag neutral">历史积累中</span>
+      </div>
+      <p>${escapeHtml(anchor.subtitle)}</p>
+      <div class="fundamental-grid">
+        ${anchor.metrics.map((metric) => `
+          <article class="fundamental-metric">
+            <span>${escapeHtml(metric.label)}</span>
+            <strong>${formatFundamentalValue(metric)}</strong>
+            <small>${escapeHtml(metric.note)}</small>
+          </article>
+        `).join("")}
+      </div>
+      <div class="fundamental-source">
+        <span>${escapeHtml(anchor.detail || "")}</span>
+        <a href="${escapeAttribute(anchor.sourceUrl)}" target="_blank" rel="noreferrer">${escapeHtml(anchor.sourceName)}</a>
+        <span>${anchor.observedAt ? escapeHtml(anchor.observedAt) : "--"} · ${escapeHtml(formatRealtimeStatus(anchor.realtimeStatus))}</span>
+      </div>
+    </section>
+  `;
+}
+
+function formatFundamentalValue(metric) {
+  if (!Number.isFinite(metric?.value)) return "--";
+  return `${metric.value.toFixed(2)}${metric.suffix || ""}`;
 }
 
 function renderObservationNotes(notes = []) {

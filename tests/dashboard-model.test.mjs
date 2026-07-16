@@ -13,6 +13,7 @@ const sampleQuotes = [
   quote("IWM", "US", 90, 60, 100, 0.3, "USD", 82),
   quote("RSP", "US", 99, 70, 115, 0.1, "USD", 78),
   unavailableQuote("SPXA200R", "US", "S&P 500 % above 200DMA source unavailable."),
+  fundamentalQuote("SP500_FUNDAMENTALS", "US", "S&P 500", 3.8, 26.32, 18.5, 7.4),
   seriesQuote("HY_OAS", "US", 3.65, 15, "%", "ICE BofA US High Yield OAS", "https://fred.stlouisfed.org/series/BAMLH0A0HYM2", "daily", "lower_is_better", [4.2, 4.0, 3.9, 3.8, 3.65]),
   seriesQuote("DGS10", "US", 4.25, 45, "%", "FRED 10Y Treasury Constant Maturity", "https://fred.stlouisfed.org/series/DGS10", "daily", "lower_is_better", [4.4, 4.35, 4.3, 4.28, 4.25]),
   seriesQuote("T10Y2Y", "US", 0.55, 68, "ppt", "FRED 10Y-2Y Treasury Spread", "https://fred.stlouisfed.org/series/T10Y2Y", "daily", "higher_is_better", [0.2, 0.28, 0.36, 0.45, 0.55]),
@@ -22,8 +23,10 @@ const sampleQuotes = [
   quote("SHCOMP", "CN", 4000, 3300, 4300, -0.2, "CNY", 76),
   quote("CSI300", "CN", 4800, 3900, 5100, -0.1, "CNY", 74),
   quote("CSI300A200R", "CN", 58, 0, 100, 0, "%", 58, "TradingView Stock Screener", "https://www.tradingview.com/markets/stocks-china/market-movers-all-stocks/"),
+  fundamentalQuote("CSI300_FUNDAMENTALS", "CN", "CSI 300", 6.2, 16.13, 11.8, 4.5),
   quote("HSI", "HK", 23000, 18000, 25000, 0.4, "HKD", 70),
   quote("HKA200R", "HK", 46, 0, 100, 0, "%", 46, "TradingView Stock Screener", "https://www.tradingview.com/markets/stocks-hong-kong/market-movers-all-stocks/"),
+  fundamentalQuote("HSCEI_FUNDAMENTALS", "HK", "HSCEI", 7.1, 14.08, 10.2, 3.2),
   quote("FXI", "US", 32, 30, 42, -0.2, "USD", 72),
   quote("KWEB", "US", 24, 22, 41, 0.7, "USD", 75),
   macroQuote("CN_M1_M2_GAP", -3.07, 38, "percentage points", [-6.5, -5.9, -4.2, -3.4, -3.07]),
@@ -90,6 +93,21 @@ test("includes rate, breadth, separate China, separate Hong Kong, and BTC-specif
   assert.equal(defaultSymbols.includes("VXX"), false);
 });
 
+test("adds unscored fundamental anchors without changing tactical indicator weights", () => {
+  const model = buildMarketModel({ quotes: sampleQuotes, timestamp: "2026-06-29T01:00:00Z" });
+  const us = model.segments.find((segment) => segment.id === "us");
+  const china = model.segments.find((segment) => segment.id === "china");
+  const hk = model.segments.find((segment) => segment.id === "hong_kong");
+
+  assert.equal(us.fundamentalAnchor.ok, true);
+  assert.equal(us.fundamentalAnchor.metrics.find((metric) => metric.id === "earnings_yield").value, 3.8);
+  assert.equal(us.fundamentalAnchor.metrics.find((metric) => metric.id === "erp").value, 3.8 - 4.25);
+  assert.equal(china.fundamentalAnchor.title, "CSI 300 基本面锚");
+  assert.equal(hk.fundamentalAnchor.title, "HSCEI 基本面锚");
+  assert.equal(china.indicators.reduce((sum, item) => sum + item.weight, 0), 100);
+  assert.equal(hk.indicators.reduce((sum, item) => sum + item.weight, 0), 100);
+});
+
 test("uses smoothed 5D and 20D rate-of-change instead of raw one-day change", () => {
   const model = buildMarketModel({ quotes: sampleQuotes, timestamp: "2026-06-29T01:00:00Z" });
   const equityTrend = model.signals.find((indicator) => indicator.id === "us_equity_trend");
@@ -144,6 +162,9 @@ test("builds local score history points for composite and all four blocks", () =
   assert.equal(typeof point.composite, "number");
   assert.deepEqual(Object.keys(point.segments), ["us", "china", "hong_kong", "crypto"]);
   assert.equal(point.segments.us.score, model.segments.find((segment) => segment.id === "us").score);
+  assert.equal(point.segments.us.fundamentals.metrics.earnings_yield, 3.8);
+  assert.equal(point.segments.china.fundamentals.metrics.roe, 11.8);
+  assert.equal(point.segments.hong_kong.fundamentals.metrics.earnings_growth, 3.2);
 });
 
 test("applies hysteresis before changing position bands", () => {
@@ -252,6 +273,36 @@ function quote(symbol, market, price, low52w, high52w, dayChangePct, currency = 
     metric_direction: "higher_is_better",
     metric_basis: "price_range_plus_momentum",
     confidence: 0.92,
+  };
+}
+
+function fundamentalQuote(symbol, market, universe, earningsYield, pe, roe, growth) {
+  return {
+    ok: true,
+    symbol,
+    market,
+    currency: "%",
+    price: earningsYield,
+    source: "TradingView Stock Screener (calculated by local proxy)",
+    source_url: "https://www.tradingview.com/markets/stocks-usa/market-movers-all-stocks/",
+    timestamp: "2026-06-29T01:00:00Z",
+    quote_timestamp: "2026-06-29T01:00:00Z",
+    as_of_date: "2026-06-29",
+    realtime_status: "fundamental_snapshot_delayed_or_unknown",
+    frequency: "daily snapshot; interpret monthly",
+    confidence: 0.9,
+    fundamentals: {
+      universe,
+      earnings_yield_pct: earningsYield,
+      aggregate_pe_ttm: pe,
+      aggregate_pb: 2.5,
+      aggregate_roe_pct: roe,
+      earnings_growth_weighted_median_pct: growth,
+      dividend_yield_weighted_pct: 2.1,
+      profitable_market_cap_pct: 92,
+      score_status: "history_building_not_scored",
+    },
+    detail: "Fundamental test snapshot",
   };
 }
 
