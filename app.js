@@ -68,6 +68,7 @@ const els = hasDocument ? {
   coverageStatus: document.querySelector("#coverageStatus"),
   segmentsGrid: document.querySelector("#segmentsGrid"),
   pillarsGrid: document.querySelector("#pillarsGrid"),
+  frameworkMatrix: document.querySelector("#frameworkMatrix"),
   segmentDetail: document.querySelector("#segmentDetail"),
   marketTableBody: document.querySelector("#marketTableBody"),
   exposureBands: document.querySelector("#exposureBands"),
@@ -434,6 +435,7 @@ function renderDashboard(model) {
 
   if (els.segmentsGrid) renderSegmentSummaries(model.segments, model.history);
   if (els.pillarsGrid) renderPillarOverview(model.segments);
+  if (els.frameworkMatrix) renderFrameworkMatrix(model.segments);
   if (els.segmentDetail) renderSegmentDetail(model.segments, model.history);
   if (els.marketTableBody) renderMarketTable(model.components);
   if (els.exposureBands) renderExposureBands(displayBand, model.bandState);
@@ -514,6 +516,91 @@ function renderPillarOverview(segments) {
       </div>
     </article>
   `).join("");
+}
+
+const MATRIX_MARKETS = ["us", "china", "hong_kong", "crypto"];
+const MATRIX_ROWS = [
+  { pillar: "price", pillarName: "01 价格确认", id: "trend", label: "主要趋势", indicators: { us: ["us_equity_trend"], china: ["china_a_share"], hong_kong: ["hk_market_trend"], crypto: ["btc_trend"] } },
+  { pillar: "price", id: "dma", label: "% Above 200DMA", indicators: { us: ["us_pct_above_200dma"], china: ["china_pct_above_200dma"], hong_kong: ["hk_pct_above_200dma"] } },
+  { pillar: "price", id: "breadth", label: "广度与一致性", indicators: { us: ["us_market_breadth"], hong_kong: ["hk_offshore_consistency"], crypto: ["btc_momentum"] } },
+  { pillar: "stress", pillarName: "02 金融压力", id: "credit", label: "信用与跨市场压力", indicators: { us: ["us_credit_spread"], china: ["china_fx_flow"], hong_kong: ["hk_offshore_china_risk"], crypto: ["btc_drawdown_risk"] } },
+  { pillar: "stress", id: "rates", label: "利率与曲线", indicators: { us: ["us_rate_expectations"] } },
+  { pillar: "stress", id: "volatility", label: "波动率期限结构", indicators: { us: ["us_vix_term_structure"] } },
+  { pillar: "liquidity", pillarName: "03 宏观流动性", id: "money", label: "货币活化", indicators: { china: ["china_m1_m2_gap"] } },
+  { pillar: "liquidity", id: "credit_impulse", label: "信用与资金迁移", indicators: { china: ["china_corporate_mlt_credit", "china_deposit_rotation"] } },
+  { pillar: "fundamental", pillarName: "04 基本面", id: "valuation", label: "估值水平", metrics: ["earnings_yield", "erp", "pe", "pb"] },
+  { pillar: "fundamental", id: "earnings", label: "盈利与质量", metrics: ["earnings_growth", "roe"] },
+  { pillar: "fundamental", id: "shareholder", label: "股东回报与盈利广度", metrics: ["dividend_yield", "profitable_breadth"] },
+];
+
+function renderFrameworkMatrix(segments) {
+  const bySegment = new Map(segments.map((segment) => [segment.id, segment]));
+  els.frameworkMatrix.innerHTML = `
+    <div class="matrix-header matrix-grid">
+      <div class="matrix-label-head">支柱 / 指标</div>
+      ${MATRIX_MARKETS.map((id) => {
+        const segment = bySegment.get(id);
+        return `<a href="${escapeAttribute(DETAIL_URLS[id])}"><strong>${escapeHtml(segment?.name || id)}</strong><span>${escapeHtml(marketStateLabel(segment))}</span></a>`;
+      }).join("")}
+    </div>
+    ${MATRIX_ROWS.map((row) => renderMatrixRow(row, bySegment)).join("")}
+  `;
+}
+
+function renderMatrixRow(row, bySegment) {
+  return `${row.pillarName ? `<div class="matrix-pillar-title"><span>${escapeHtml(row.pillarName)}</span><small>${escapeHtml(pillarPurpose(row.pillar))}</small></div>` : ""}
+    <details class="matrix-row">
+      <summary class="matrix-grid">
+        <div class="matrix-row-label"><strong>${escapeHtml(row.label)}</strong><span>点击查看方法与来源</span></div>
+        ${MATRIX_MARKETS.map((id) => renderMatrixCell(row, bySegment.get(id))).join("")}
+      </summary>
+      <div class="matrix-expanded">
+        ${MATRIX_MARKETS.map((id) => renderMatrixMethod(row, bySegment.get(id))).join("")}
+      </div>
+    </details>`;
+}
+
+function renderMatrixCell(row, segment) {
+  if (!segment) return `<div class="matrix-cell unavailable">--</div>`;
+  if (row.metrics) {
+    const metrics = row.metrics.map((id) => segment.fundamentalAnchor?.metrics?.find((metric) => metric.id === id)).filter(Boolean);
+    if (!metrics.length) return `<div class="matrix-cell unavailable"><strong>不适用</strong><span>${segment.id === "crypto" ? "无企业基本面" : "暂无可靠数据"}</span></div>`;
+    return `<div class="matrix-cell fundamental-cell">${metrics.map((metric) => `<span><small>${escapeHtml(metric.label)}</small><strong>${formatFundamentalValue(metric)}</strong></span>`).join("")}</div>`;
+  }
+  const indicators = findMatrixIndicators(row, segment);
+  if (!indicators.length) return `<div class="matrix-cell unavailable"><strong>暂无指标</strong><span>待可靠数据源</span></div>`;
+  return `<div class="matrix-cell">${indicators.map((indicator) => `
+    <span class="matrix-signal"><small>${escapeHtml(indicator.name)}</small><strong>${matrixPrimaryValue(indicator)}</strong><em class="${indicator.status.tone}">${escapeHtml(indicator.status.label)}</em></span>
+  `).join("")}</div>`;
+}
+
+function matrixPrimaryValue(indicator) {
+  const direct = indicator.inputs.find((input) => Number.isFinite(input.price));
+  if (direct && indicator.inputs.length === 1) return formatPrice(direct.price, direct.currency);
+  return indicator.score === null ? "--" : `${Math.round(indicator.score)} / 100`;
+}
+
+function renderMatrixMethod(row, segment) {
+  if (row.metrics) {
+    const anchor = segment?.fundamentalAnchor;
+    const metrics = row.metrics.map((id) => anchor?.metrics?.find((metric) => metric.id === id)).filter(Boolean);
+    if (!metrics.length) return `<article><h4>${escapeHtml(segment?.name || "--")}</h4><p>该市场没有适用或可靠的企业基本面数据。</p></article>`;
+    return `<article><h4>${escapeHtml(segment.name)}</h4>${metrics.map((metric) => `<p><strong>${escapeHtml(metric.label)}：</strong>${escapeHtml(metric.note)}</p>`).join("")}<p class="method-source">来源：${anchor.sourceUrl ? `<a href="${escapeAttribute(anchor.sourceUrl)}" target="_blank" rel="noreferrer">${escapeHtml(anchor.sourceName)}</a>` : escapeHtml(anchor.sourceName)} · ${escapeHtml(anchor.observedAt || "--")}</p></article>`;
+  }
+  const indicators = findMatrixIndicators(row, segment);
+  return `<article><h4>${escapeHtml(segment?.name || "--")}</h4>${indicators.length ? indicators.map((indicator) => `
+    <p><strong>${escapeHtml(indicator.name)}：</strong>${escapeHtml(indicator.formula)}</p>
+    <p class="method-source">${indicator.sourceUrl ? `<a href="${escapeAttribute(indicator.sourceUrl)}" target="_blank" rel="noreferrer">${escapeHtml(indicator.sourceName)}</a>` : escapeHtml(indicator.sourceName)} · ${escapeHtml(indicator.observedAt || "--")} · ${escapeHtml(formatFrequency(indicator.frequency))}</p>
+  `).join("") : `<p>当前没有可靠、可持续更新的对应指标。</p>`}</article>`;
+}
+
+function findMatrixIndicators(row, segment) {
+  const ids = row.indicators?.[segment?.id] || [];
+  return ids.map((id) => segment.indicators.find((indicator) => indicator.id === id)).filter(Boolean);
+}
+
+function pillarPurpose(id) {
+  return { price: "确认市场正在做什么", stress: "识别去杠杆与风险约束", liquidity: "解释资金环境与驱动", fundamental: "判断估值与盈利赔率" }[id] || "";
 }
 
 function renderPillarMini(pillar) {
