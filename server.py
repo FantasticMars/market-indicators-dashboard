@@ -32,8 +32,8 @@ TIMEOUT_SECONDS = 4
 MAX_SOURCE_WORKERS = 8
 QUOTE_CACHE_SECONDS = 45
 TLS_FALLBACK_NOTE = "TLS verification fallback"
-SPXA200R_SOURCE = "S&P 500 % above 200DMA source unavailable"
-SPXA200R_SOURCE_URL = "https://stockcharts.com/h-sc/ui?s=%24SPXA200R"
+TRADINGVIEW_BREADTH_SOURCE = "TradingView Stock Screener (calculated by local proxy)"
+TRADINGVIEW_SCANNER_BASE = "https://scanner.tradingview.com"
 CHINA_MACRO_SOURCE = "PBOC / SAFE official statistics via local proxy"
 CHINA_MACRO_STATUS = "official_monthly_snapshot"
 HISTORY_FILE = ROOT / "market-history.json"
@@ -73,6 +73,29 @@ CHINA_MACRO_SYMBOLS = {
     "CN_CORP_MLT_LOAN_YOY",
     "CN_HOUSEHOLD_NBFI_DEPOSIT_GAP",
     "CN_FX_SETTLEMENT_FLOW",
+}
+
+BREADTH_SYMBOLS = {
+    "SPXA200R": {
+        "name": "S&P 500 % above 200DMA",
+        "market": "US",
+        "scanner_market": "america",
+        "group": "SP:SPX",
+        "source_url": "https://www.tradingview.com/markets/stocks-usa/market-movers-all-stocks/",
+    },
+    "CSI300A200R": {
+        "name": "CSI 300 % above 200DMA",
+        "market": "CN",
+        "scanner_market": "china",
+        "group": "SSE:000300",
+        "source_url": "https://www.tradingview.com/markets/stocks-china/market-movers-all-stocks/",
+    },
+    "HKA200R": {
+        "name": "Hong Kong primary stocks % above 200DMA",
+        "market": "HK",
+        "scanner_market": "hongkong",
+        "source_url": "https://www.tradingview.com/markets/stocks-hong-kong/market-movers-all-stocks/",
+    },
 }
 
 FRED_SERIES = {
@@ -204,6 +227,30 @@ def read_url_bytes(url: str, context: ssl.SSLContext | None = None) -> bytes:
 def fetch_json(url: str) -> tuple[dict[str, Any], str | None]:
     text, transport_note = fetch_text(url)
     return json.loads(text), transport_note
+
+
+def post_json(url: str, payload: dict[str, Any]) -> dict[str, Any]:
+    request = Request(
+        url,
+        data=json.dumps(payload).encode("utf-8"),
+        headers={
+            "User-Agent": "MarketIndicators/1.0 local dashboard",
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urlopen(request, timeout=max(TIMEOUT_SECONDS, 15)) as response:
+            return json.loads(response.read().decode("utf-8", errors="replace"))
+    except URLError as exc:
+        if "CERTIFICATE_VERIFY_FAILED" not in str(exc):
+            raise
+        context = ssl._create_unverified_context()
+        with urlopen(request, timeout=max(TIMEOUT_SECONDS, 15), context=context) as response:
+            result = json.loads(response.read().decode("utf-8", errors="replace"))
+            result["_transport_note"] = TLS_FALLBACK_NOTE
+            return result
 
 
 def source_label(transport_note: str | None = None) -> str:
@@ -339,7 +386,7 @@ def fetch_quotes(symbols: list[str]) -> dict[str, Any]:
         "quotes": quotes,
         "source": source,
         "timestamp": now_iso(),
-        "realtime_status": REALTIME_STATUS if tencent_symbols else CHINA_MACRO_STATUS,
+        "realtime_status": REALTIME_STATUS if tencent_symbols else "mixed_snapshot",
     }
     store_quote_payload(symbols, payload)
     return payload
@@ -487,30 +534,13 @@ def error_quote(symbol: str, message: str) -> dict[str, Any]:
 
 def is_special_symbol(symbol: str) -> bool:
     upper = symbol.upper()
-    return upper == "SPXA200R" or upper in CHINA_MACRO_SYMBOLS or upper in FRED_SERIES or upper in CBOE_SYMBOLS or upper == "BTC"
+    return upper in BREADTH_SYMBOLS or upper in CHINA_MACRO_SYMBOLS or upper in FRED_SERIES or upper in CBOE_SYMBOLS or upper == "BTC"
 
 
 def special_quote(symbol: str) -> dict[str, Any]:
     upper = symbol.upper()
-    if upper == "SPXA200R":
-        return {
-            "ok": False,
-            "symbol": "SPXA200R",
-            "name": "S&P 500 % above 200DMA",
-            "market": "US",
-            "currency": "%",
-            "source": SPXA200R_SOURCE,
-            "source_url": SPXA200R_SOURCE_URL,
-            "timestamp": now_iso(),
-            "quote_timestamp": now_iso(),
-            "as_of_date": today_label(),
-            "realtime_status": "unavailable",
-            "frequency": "daily",
-            "metric_direction": "higher_is_better",
-            "metric_basis": "unavailable",
-            "confidence": 0.0,
-            "error": "当前环境无法读取 % above 200DMA：market_data/yfinance 无报价，StockCharts 被阻止，Yahoo 限流；该指标暂不计入综合分。",
-        }
+    if upper in BREADTH_SYMBOLS:
+        return tradingview_breadth_quote(upper)
     if upper in FRED_SERIES:
         return fred_quote(upper)
     if upper in CBOE_SYMBOLS:
@@ -520,6 +550,70 @@ def special_quote(symbol: str) -> dict[str, Any]:
     if upper in CHINA_MACRO_SYMBOLS:
         return china_macro_quotes().get(upper) or macro_error_quote(upper, "China macro symbol did not return a row.")
     return error_quote(symbol, "Special symbol is not configured.")
+
+
+def tradingview_breadth_quote(symbol: str) -> dict[str, Any]:
+    config = BREADTH_SYMBOLS[symbol]
+    scanner_market = config["scanner_market"]
+    filters: list[dict[str, Any]] = []
+    symbols: dict[str, Any] = {"query": {"types": []}, "tickers": []}
+    if config.get("group"):
+        symbols["groups"] = [{"type": "index", "values": [config["group"]]}]
+    else:
+        filters = [
+            {"left": "type", "operation": "equal", "right": "stock"},
+            {"left": "typespecs", "operation": "has", "right": "common"},
+            {"left": "is_primary", "operation": "equal", "right": True},
+        ]
+    payload = {
+        "filter": filters,
+        "options": {"lang": "en"},
+        "markets": [scanner_market],
+        "symbols": symbols,
+        "columns": ["name", "close", "SMA200"],
+        "range": [0, 10000],
+    }
+    url = f"{TRADINGVIEW_SCANNER_BASE}/{scanner_market}/scan"
+    try:
+        response = post_json(url, payload)
+        rows = response.get("data") or []
+        eligible = [row for row in rows if len(row.get("d") or []) >= 3 and is_number(row["d"][1]) and is_number(row["d"][2])]
+        above = sum(1 for row in eligible if float(row["d"][1]) > float(row["d"][2]))
+        if not eligible:
+            raise ValueError("scanner returned no rows with close and SMA200")
+        value = round(above * 100 / len(eligible), 2)
+        timestamp = now_iso()
+        return {
+            "ok": True,
+            "symbol": symbol,
+            "name": config["name"],
+            "market": config["market"],
+            "currency": "%",
+            "price": value,
+            "range_position": value,
+            "low_52w": 0,
+            "high_52w": 100,
+            "source": f"{TRADINGVIEW_BREADTH_SOURCE} ({response['_transport_note']})" if response.get("_transport_note") else TRADINGVIEW_BREADTH_SOURCE,
+            "source_url": config["source_url"],
+            "timestamp": timestamp,
+            "quote_timestamp": timestamp,
+            "as_of_date": today_label(),
+            "realtime_status": "daily_snapshot_delayed_or_unknown",
+            "frequency": "daily",
+            "metric_direction": "higher_is_better",
+            "metric_basis": "constituents_above_sma200",
+            "confidence": 0.9 if config.get("group") else 0.8,
+            "detail": f"{above}/{len(eligible)} securities above SMA200; scanner universe returned {response.get('totalCount', len(rows))} rows.",
+        }
+    except Exception as exc:
+        return error_quote_for_special(symbol, config["name"], "%", config["source_url"], f"TradingView breadth scan failed: {exc}")
+
+
+def is_number(value: Any) -> bool:
+    try:
+        return value is not None and float(value) == float(value)
+    except (TypeError, ValueError):
+        return False
 
 
 def fred_quote(symbol: str) -> dict[str, Any]:
@@ -1351,6 +1445,8 @@ def append_score_history(point: dict[str, Any], path: Path = HISTORY_FILE, limit
 
 def market_for_symbol(symbol: str) -> str:
     upper = symbol.upper()
+    if upper in BREADTH_SYMBOLS:
+        return BREADTH_SYMBOLS[upper]["market"]
     if upper in CHINA_MACRO_SYMBOLS:
         return "CN"
     if upper == "BTC":
@@ -1400,8 +1496,8 @@ def source_url_for_symbol(symbol: str, mapped_symbol: str) -> str:
         return f"{CBOE_BASE}/{CBOE_SYMBOLS[symbol.upper()]}.json"
     if symbol.upper() in CHINA_MACRO_SYMBOLS:
         return CHINA_MACRO_SOURCE_URLS.get(symbol.upper(), PBC_CATEGORY_URLS[2026]["money"])
-    if symbol.upper() == "SPXA200R":
-        return SPXA200R_SOURCE_URL
+    if symbol.upper() in BREADTH_SYMBOLS:
+        return BREADTH_SYMBOLS[symbol.upper()]["source_url"]
     if symbol.upper() == "BTC":
         return "https://www.coingecko.com/en/coins/bitcoin"
     return f"https://gu.qq.com/{mapped_symbol}"
@@ -1425,7 +1521,7 @@ def currency_for_symbol(symbol: str) -> str:
         return FRED_SERIES[upper]["currency"]
     if upper in CBOE_SYMBOLS:
         return "%"
-    if symbol.upper() == "SPXA200R":
+    if symbol.upper() in BREADTH_SYMBOLS:
         return "%"
     market = market_for_symbol(symbol)
     if market == "CN":

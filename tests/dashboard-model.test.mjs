@@ -21,7 +21,9 @@ const sampleQuotes = [
   seriesQuote("VIX9D", "US", 13, 32, "%", "CBOE delayed quotes", "https://www.cboe.com/tradable_products/vix/", "daily", "lower_is_better", [17, 15, 14, 13.5, 13]),
   quote("SHCOMP", "CN", 4000, 3300, 4300, -0.2, "CNY", 76),
   quote("CSI300", "CN", 4800, 3900, 5100, -0.1, "CNY", 74),
+  quote("CSI300A200R", "CN", 58, 0, 100, 0, "%", 58, "TradingView Stock Screener", "https://www.tradingview.com/markets/stocks-china/market-movers-all-stocks/"),
   quote("HSI", "HK", 23000, 18000, 25000, 0.4, "HKD", 70),
+  quote("HKA200R", "HK", 46, 0, 100, 0, "%", 46, "TradingView Stock Screener", "https://www.tradingview.com/markets/stocks-hong-kong/market-movers-all-stocks/"),
   quote("FXI", "US", 32, 30, 42, -0.2, "USD", 72),
   quote("KWEB", "US", 24, 22, 41, 0.7, "USD", 75),
   macroQuote("CN_M1_M2_GAP", -3.07, 38, "percentage points", [-6.5, -5.9, -4.2, -3.4, -3.07]),
@@ -64,11 +66,13 @@ test("includes rate, breadth, separate China, separate Hong Kong, and BTC-specif
   assert.ok(indicatorIds.includes("us_credit_spread"));
   assert.ok(indicatorIds.includes("us_vix_term_structure"));
   assert.ok(indicatorIds.includes("china_a_share"));
+  assert.ok(indicatorIds.includes("china_pct_above_200dma"));
   assert.ok(indicatorIds.includes("china_m1_m2_gap"));
   assert.ok(indicatorIds.includes("china_corporate_mlt_credit"));
   assert.ok(indicatorIds.includes("china_deposit_rotation"));
   assert.ok(indicatorIds.includes("china_fx_flow"));
   assert.ok(indicatorIds.includes("hk_market_trend"));
+  assert.ok(indicatorIds.includes("hk_pct_above_200dma"));
   assert.ok(indicatorIds.includes("hk_offshore_china_risk"));
   assert.ok(indicatorIds.includes("btc_trend"));
   assert.ok(defaultSymbols.includes("HY_OAS"));
@@ -78,6 +82,8 @@ test("includes rate, breadth, separate China, separate Hong Kong, and BTC-specif
   assert.ok(defaultSymbols.includes("VIX3M"));
   assert.ok(defaultSymbols.includes("VIX9D"));
   assert.ok(defaultSymbols.includes("BTC"));
+  assert.ok(defaultSymbols.includes("CSI300A200R"));
+  assert.ok(defaultSymbols.includes("HKA200R"));
   assert.equal(defaultSymbols.includes("HYG"), false);
   assert.equal(defaultSymbols.includes("TLT"), false);
   assert.equal(defaultSymbols.includes("SHY"), false);
@@ -167,17 +173,19 @@ test("scores mainland China separately from Hong Kong/offshore China", () => {
   assert.equal(hongKong.weight, 13);
   assert.equal(totalWeight, 100);
   assert.deepEqual(weightsById, {
-    china_a_share: 25,
-    china_m1_m2_gap: 20,
-    china_corporate_mlt_credit: 20,
-    china_deposit_rotation: 15,
-    china_fx_flow: 20,
+    china_a_share: 20,
+    china_pct_above_200dma: 15,
+    china_m1_m2_gap: 17,
+    china_corporate_mlt_credit: 18,
+    china_deposit_rotation: 13,
+    china_fx_flow: 17,
   });
   assert.equal(hkTotalWeight, 100);
   assert.deepEqual(hkWeightsById, {
-    hk_market_trend: 35,
-    hk_offshore_china_risk: 35,
-    hk_offshore_consistency: 30,
+    hk_market_trend: 30,
+    hk_pct_above_200dma: 20,
+    hk_offshore_china_risk: 25,
+    hk_offshore_consistency: 25,
   });
   assert.equal(china.availableWeight, 100);
   assert.equal(hongKong.availableWeight, 100);
