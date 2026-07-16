@@ -12,11 +12,13 @@ export const DEFAULT_INSTRUMENTS = [
   { symbol: "VIX9D", name: "CBOE VIX9D", role: "Near-term volatility", group: "volatility", segment: "us" },
   { symbol: "SHCOMP", name: "Shanghai Composite", role: "A-share broad market", group: "china", segment: "china" },
   { symbol: "CSI300", name: "CSI 300", role: "A-share large caps", group: "china", segment: "china" },
+  { symbol: "CSI300A200R", name: "CSI 300 % above 200DMA", role: "A-share breadth", group: "breadth", segment: "china" },
   { symbol: "CN_M1_M2_GAP", name: "M1-M2 growth gap", role: "Money activation", group: "macro", segment: "china" },
   { symbol: "CN_CORP_MLT_LOAN_YOY", name: "Corporate mid/long loan YoY", role: "Credit impulse", group: "credit", segment: "china" },
   { symbol: "CN_HOUSEHOLD_NBFI_DEPOSIT_GAP", name: "Household vs NBFI deposit gap", role: "Deposit rotation", group: "funds", segment: "china" },
   { symbol: "CN_FX_SETTLEMENT_FLOW", name: "FX settlement surplus + CNY", role: "External flow", group: "external", segment: "china" },
   { symbol: "HSI", name: "Hang Seng Index", role: "Hong Kong market", group: "hk", segment: "hong_kong" },
+  { symbol: "HKA200R", name: "Hong Kong primary stocks % above 200DMA", role: "Hong Kong breadth", group: "breadth", segment: "hong_kong" },
   { symbol: "FXI", name: "China Large-Cap ETF", role: "Offshore China risk", group: "global", segment: "hong_kong" },
   { symbol: "KWEB", name: "China Internet ETF", role: "China growth proxy", group: "global", segment: "hong_kong" },
   { symbol: "BTC", name: "Bitcoin spot", role: "24/7 BTC spot risk", group: "crypto", segment: "crypto" },
@@ -247,15 +249,22 @@ function buildSegments(components) {
       indicator({
         id: "china_a_share",
         name: "A 股趋势",
-        weight: 25,
+        weight: 20,
         inputs: pick(bySymbol, ["SHCOMP", "CSI300"]),
         description: "上证综指和沪深 300 用来判断 A 股整体与大盘核心资产状态。",
         formula: "平均(70% 指数 52 周位置 + 30% 5D/20D ROC 与 slope)",
       }),
+      directBreadthIndicator(bySymbol, {
+        symbol: "CSI300A200R",
+        id: "china_pct_above_200dma",
+        name: "沪深 300 % above 200DMA",
+        weight: 15,
+        description: "沪深 300 成分股中收盘价高于 200 日均线的比例，直接衡量 A 股核心资产的参与广度。",
+      }),
       indicator({
         id: "china_m1_m2_gap",
         name: "M1-M2 剪刀差",
-        weight: 20,
+        weight: 17,
         inputs: pick(bySymbol, ["CN_M1_M2_GAP"]),
         description: "比较 M1 同比和 M2 同比，判断钱是否从账面流动性转为交易性活钱。",
         formula: "M1-M2 剪刀差按自身历史分布评分，并用月度变化方向做 30% 动量层",
@@ -263,7 +272,7 @@ function buildSegments(components) {
       indicator({
         id: "china_corporate_mlt_credit",
         name: "企业中长贷同比",
-        weight: 20,
+        weight: 18,
         inputs: pick(bySymbol, ["CN_CORP_MLT_LOAN_YOY"]),
         description: "企事业单位中长期贷款同比越强，越能说明宽信用进入企业资本开支和长期融资。",
         formula: "企业中长贷同比按自身历史分布评分，并用月度变化方向做 30% 动量层",
@@ -271,7 +280,7 @@ function buildSegments(components) {
       indicator({
         id: "china_deposit_rotation",
         name: "居民 vs 非银存款剪刀差",
-        weight: 15,
+        weight: 13,
         inputs: pick(bySymbol, ["CN_HOUSEHOLD_NBFI_DEPOSIT_GAP"]),
         description: "比较非银存款月增量与住户存款月增量，观察居民资金是否搬入非银体系。",
         formula: "居民与非银存款剪刀差按自身历史分布评分，并用月度变化方向做 30% 动量层",
@@ -279,7 +288,7 @@ function buildSegments(components) {
       indicator({
         id: "china_fx_flow",
         name: "结售汇顺差 + 汇率",
-        weight: 20,
+        weight: 17,
         inputs: pick(bySymbol, ["CN_FX_SETTLEMENT_FLOW"]),
         description: "用银行结售汇顺差和美元兑人民币期末汇率变化观察外部资金压力。",
         formula: "结售汇顺差按自身历史分布评分，并用月度变化方向做 30% 动量层",
@@ -289,15 +298,22 @@ function buildSegments(components) {
       indicator({
         id: "hk_market_trend",
         name: "港股趋势",
-        weight: 35,
+        weight: 30,
         inputs: pick(bySymbol, ["HSI"]),
         description: "用恒生指数的 52 周区间位置和 5D/20D ROC 判断香港本地市场趋势。",
         formula: "HSI 70% 52 周位置 + 30% 5D/20D ROC 与 slope",
       }),
+      directBreadthIndicator(bySymbol, {
+        symbol: "HKA200R",
+        id: "hk_pct_above_200dma",
+        name: "港股主要普通股 % above 200DMA",
+        weight: 20,
+        description: "港交所主要上市普通股中收盘价高于 200 日均线的比例；口径是港股全市场，不等同于恒指或纯 H 股成分。",
+      }),
       indicator({
         id: "hk_offshore_china_risk",
         name: "离岸中国风险偏好",
-        weight: 35,
+        weight: 25,
         inputs: pick(bySymbol, ["FXI", "KWEB"]),
         description: "FXI 和 KWEB 共同反映离岸中国大盘与成长资产的风险偏好。",
         formula: "平均(70% 52 周位置 + 30% 5D/20D ROC 与 slope)",
@@ -305,7 +321,7 @@ function buildSegments(components) {
       indicator({
         id: "hk_offshore_consistency",
         name: "港股 / 中概一致性",
-        weight: 30,
+        weight: 25,
         inputs: pick(bySymbol, ["HSI", "FXI", "KWEB"]),
         description: "比较恒指、FXI、KWEB 是否同向修复或同向走弱，避免单一市场噪音。",
         formula: "平均分 - 分歧惩罚",
@@ -392,17 +408,27 @@ function indicator({ id, name, weight, inputs, description, formula, scoreOverri
 }
 
 function dmaBreadthIndicator(bySymbol) {
-  const breadth = bySymbol.get("SPXA200R");
+  return directBreadthIndicator(bySymbol, {
+    symbol: "SPXA200R",
+    id: "us_pct_above_200dma",
+    name: "% above 200DMA",
+    weight: 20,
+    description: "S&P 500 成分股中位于 200 日均线之上的比例；这是更直接的市场广度指标。",
+  });
+}
+
+function directBreadthIndicator(bySymbol, { symbol, id, name, weight, description }) {
+  const breadth = bySymbol.get(symbol);
   const directValue = numberOrNull(breadth?.price) ?? numberOrNull(breadth?.rangePosition);
   const score = breadth?.ok && isFiniteNumber(directValue) ? clamp(directValue, 0, 100) : null;
 
   return indicator({
-    id: "us_pct_above_200dma",
-    name: "% above 200DMA",
-    weight: 20,
-    inputs: pick(bySymbol, ["SPXA200R"]),
-    description: "S&P 500 成分股中位于 200 日均线之上的比例；这是更直接的市场广度指标。",
-    formula: "% above 200DMA 直接作为 0-100 分；无可用源时不参与美国综合分分母",
+    id,
+    name,
+    weight,
+    inputs: pick(bySymbol, [symbol]),
+    description,
+    formula: "% above 200DMA 直接作为 0-100 分；无可用源时不参与所属市场综合分分母",
     scoreOverride: score,
   });
 }

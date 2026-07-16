@@ -2,12 +2,41 @@ import json
 import tempfile
 import time
 import unittest
+from datetime import datetime, timezone
 from pathlib import Path
 
 import server
 
 
 class ServerSourceTransformTests(unittest.TestCase):
+    def test_tradingview_breadth_calculates_percent_from_constituents(self):
+        original_post_json = server.post_json
+        try:
+            server.post_json = lambda url, payload: {
+                "totalCount": 4,
+                "data": [
+                    {"s": "TEST:A", "d": ["A", 110, 100]},
+                    {"s": "TEST:B", "d": ["B", 90, 100]},
+                    {"s": "TEST:C", "d": ["C", 101, 100]},
+                    {"s": "TEST:D", "d": ["D", None, 100]},
+                ],
+            }
+            quote = server.tradingview_breadth_quote("SPXA200R")
+        finally:
+            server.post_json = original_post_json
+
+        self.assertTrue(quote["ok"])
+        self.assertEqual(quote["price"], 66.67)
+        self.assertEqual(quote["metric_basis"], "constituents_above_sma200")
+        self.assertIn("2/3", quote["detail"])
+        self.assertEqual(quote["realtime_status"], "daily_snapshot_delayed_or_unknown")
+
+    def test_regional_breadth_universe_configuration_is_explicit(self):
+        self.assertEqual(server.BREADTH_SYMBOLS["CSI300A200R"]["group"], "SSE:000300")
+        self.assertNotIn("group", server.BREADTH_SYMBOLS["HKA200R"])
+        self.assertEqual(server.market_for_symbol("CSI300A200R"), "CN")
+        self.assertEqual(server.market_for_symbol("HKA200R"), "HK")
+
     def test_fred_quote_uses_daily_as_of_history_and_direction(self):
         csv_text = "\n".join(
             [
@@ -247,12 +276,13 @@ class ServerSourceTransformTests(unittest.TestCase):
         self.assertLess(elapsed, 0.16)
 
 
-def tencent_record(remote_symbol, price):
+def tencent_record(remote_symbol, price, quote_timestamp=None):
+    quote_timestamp = quote_timestamp or datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
     fields = [""] * 50
     fields[1] = remote_symbol
     fields[3] = str(price)
     fields[4] = str(price - 1)
-    fields[30] = "2026-06-30 16:00:00"
+    fields[30] = quote_timestamp
     fields[32] = "1.0"
     fields[35] = "USD"
     fields[46] = remote_symbol

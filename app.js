@@ -35,6 +35,9 @@ const LEGACY_DEFAULT_SYMBOLS = [
   "SHCOMP", "CSI300", "HSI", "FXI", "KWEB", "BTC",
 ];
 const PRE_MACRO_DEFAULT_SYMBOLS = [...LEGACY_DEFAULT_SYMBOLS, "SPXA200R"];
+const PRE_REGIONAL_BREADTH_DEFAULT_SYMBOLS = DEFAULT_INSTRUMENTS
+  .map((item) => item.symbol)
+  .filter((symbol) => !["CSI300A200R", "HKA200R"].includes(symbol));
 const PRE_NATIVE_DEFAULT_SYMBOLS = [
   "SPY", "QQQ", "IWM", "RSP", "SPXA200R", "HYG", "TLT", "SHY", "VXX",
   "SHCOMP", "CSI300", "HSI", "FXI", "KWEB",
@@ -128,7 +131,10 @@ function isLegacyDefaultSymbols(value) {
       && PRE_MACRO_DEFAULT_SYMBOLS.every((symbol) => set.has(symbol))
   ) || (
     set.size === PRE_NATIVE_DEFAULT_SYMBOLS.length
-      && PRE_NATIVE_DEFAULT_SYMBOLS.every((symbol) => set.has(symbol))
+    && PRE_NATIVE_DEFAULT_SYMBOLS.every((symbol) => set.has(symbol))
+  ) || (
+    set.size === PRE_REGIONAL_BREADTH_DEFAULT_SYMBOLS.length
+    && PRE_REGIONAL_BREADTH_DEFAULT_SYMBOLS.every((symbol) => set.has(symbol))
   ) || (
     hasDeprecatedDefault
       && !hasNativeDefault
