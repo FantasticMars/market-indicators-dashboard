@@ -47,3 +47,10 @@ test("all app pages load cloud runtime config before app module", () => {
     assert.ok(configIndex < appIndex, `${file} should load config.js before app.js`);
   }
 });
+
+test("GitHub Pages artifact includes every navigable HTML page", () => {
+  const workflow = readFileSync(resolve(root, ".github/workflows/pages.yml"), "utf8");
+  for (const file of ["index.html", "us.html", "china.html", "hong-kong.html", "crypto.html", "settings.html"]) {
+    assert.match(workflow, new RegExp(`cp[^\\n]*${file.replace(".", "\\.")}`), `${file} should be copied into the Pages artifact`);
+  }
+});

@@ -555,6 +555,7 @@ function renderMatrixRow(row, bySegment) {
         ${MATRIX_MARKETS.map((id) => renderMatrixCell(row, bySegment.get(id))).join("")}
       </summary>
       <div class="matrix-expanded">
+        <aside class="matrix-meaning">${renderMeaning(meaningForRow(row))}</aside>
         ${MATRIX_MARKETS.map((id) => renderMatrixMethod(row, bySegment.get(id))).join("")}
       </div>
     </details>`;
@@ -601,6 +602,46 @@ function findMatrixIndicators(row, segment) {
 
 function pillarPurpose(id) {
   return { price: "确认市场正在做什么", stress: "识别去杠杆与风险约束", liquidity: "解释资金环境与驱动", fundamental: "判断估值与盈利赔率" }[id] || "";
+}
+
+const INDICATOR_MEANINGS = {
+  us_equity_trend: ["确认主要指数的中期方向，避免只因单日上涨就判断趋势反转。", "高分且持续改善，说明大盘、成长与小盘方向更一致；低分代表价格确认不足。", "用于决定是否允许增加风险，而不是单独产生买入信号。"],
+  us_pct_above_200dma: ["衡量上涨是否由足够多的成分股参与。", "高于60%通常代表广度健康；低于40%说明多数股票仍在长期均线下。", "趋势向上但广度很低时，应防范少数权重股推动的脆弱上涨。"],
+  us_market_breadth: ["比较等权指数与市值加权指数，识别上涨是否过度集中。", "等权表现改善表示中位数股票开始跟随；持续落后则表示集中度风险。", "用于调整加仓速度和分散程度。"],
+  us_credit_spread: ["高收益债利差是企业融资压力和违约风险的市场价格。", "利差低且收窄有利风险资产；快速走阔往往早于股票盈利预期下修。", "严重走阔时应限制仓位，即使股票估值已经下降。"],
+  us_rate_expectations: ["观察长端利率压力和收益率曲线形态。", "长端利率快速上升会压缩估值；曲线修复需区分增长改善还是衰退式降息。", "用于判断估值折现压力，不把单次降息直接当作利好。"],
+  us_vix_term_structure: ["期限结构比单看VIX水平更能识别急性避险需求。", "VIX低于VIX3M通常是正常contango；倒挂代表近端保护需求突然上升。", "倒挂时降低风险上限，恢复正常后再等待价格确认。"],
+  china_a_share: ["确认A股主要指数的中期方向。", "趋势改善但广度未跟随，通常只是权重行情；两者同步更可靠。", "配合信用和资金指标决定是否从观察转为参与。"],
+  china_pct_above_200dma: ["衡量沪深300成分股站上长期均线的比例。", "持续高于60%代表上涨扩散；低于40%代表多数权重股仍偏弱。", "用于过滤指数被少数金融或消费权重拉动的假象。"],
+  china_m1_m2_gap: ["观察活期资金相对定期资金是否活化。", "缺口收窄或转正通常意味着企业交易和风险偏好改善；持续深负值代表资金沉淀。", "是慢变量，只用于确认流动性环境，不用于日内交易。"],
+  china_corporate_mlt_credit: ["企业中长期贷款反映实体投资和信用需求。", "同比改善说明信用传导增强；仅总量扩张而中长期贷款弱，质量通常较低。", "用于验证政策宽松是否真正进入实体部门。"],
+  china_deposit_rotation: ["观察居民存款与非银存款变化，识别资金是否从银行体系流向资本市场。", "非银存款相对改善可支持市场流动性，但也可能受季末扰动。", "需结合连续月份和价格广度，不因单月跳升追涨。"],
+  china_fx_flow: ["结售汇和人民币状态反映外部资金与汇率约束。", "顺差和汇率稳定降低外资流出压力；逆差扩大则压缩政策与估值空间。", "压力升高时限制港股和A股风险暴露。"],
+  hk_market_trend: ["确认恒生指数自身趋势。", "高分代表价格位于长期区间上部且动量改善；低分意味着反弹尚未转为趋势。", "必须与广度、离岸风险和流动性共同使用。"],
+  hk_pct_above_200dma: ["衡量港股主要股票的长期趋势覆盖面。", "比例低说明指数可能由少数互联网或金融权重推动。", "广度未修复时，即使估值便宜也控制建仓节奏。"],
+  hk_offshore_china_risk: ["用离岸中国大盘和互联网资产观察海外投资者风险偏好。", "FXI与KWEB同步改善比单一恒指上涨更可信。", "用于判断港股上涨是否获得离岸资金确认。"],
+  hk_offshore_consistency: ["衡量恒指、国企和互联网风险代理是否方向一致。", "分歧扩大意味着行情结构不稳定。", "一致性低时降低对单一指数突破的信任。"],
+  btc_trend: ["观察BTC的中期价格方向。", "加密资产波动高，单靠趋势不能代表基本面改善。", "仅作为独立风险资产仓位参考，不与股票基本面合并。"],
+  btc_momentum: ["用5日和20日变动过滤单日噪音。", "短中期动量同步为正更可靠；快速反转代表拥挤交易风险。", "用于调节进出速度，不用于判断内在价值。"],
+  btc_drawdown_risk: ["衡量BTC距离年度高点的回撤压力。", "回撤加深说明风险承受能力下降，但低位本身不代表便宜。", "与趋势共同决定仓位上限。"],
+};
+
+function meaningForIndicator(indicator) {
+  return INDICATOR_MEANINGS[indicator.id] || [indicator.description, "分数越高代表该指标对当前市场状态越有利。", "应与同一支柱的其他指标交叉确认。"];
+}
+
+function meaningForRow(row) {
+  const meanings = Object.values(row.indicators || {}).flat();
+  const first = meanings.length ? INDICATOR_MEANINGS[meanings[0]] : null;
+  if (first) return first;
+  if (row.id === "valuation") return ["比较当前价格对应的盈利和净资产估值。", "盈利收益率越高、PE/PB越低通常意味着长期赔率更好，但也可能反映盈利质量或风险较差。", "低估值只提高观察优先级，必须等待趋势和盈利确认。"];
+  if (row.id === "earnings") return ["观察企业盈利增长与股东权益回报能力。", "ROE高说明权益资本产出高，但需警惕杠杆和回购造成的机械抬升。", "盈利改善可以提高趋势信号的持久性。"];
+  return ["观察股息回报和盈利覆盖面的质量。", "股息率需结合派息可持续性；盈利广度越高，指数盈利越不依赖少数公司。", "用于区分便宜且健康与便宜但盈利脆弱。"];
+}
+
+function renderMeaning(items) {
+  const labels = ["作用", "怎么看", "操作意义"];
+  return `<h4>指标意义</h4>${items.map((item, index) => `<p><strong>${labels[index]}：</strong>${escapeHtml(item)}</p>`).join("")}`;
 }
 
 function renderPillarMini(pillar) {
@@ -703,6 +744,7 @@ function renderFundamentalAnchor(anchor) {
         <span class="tag neutral">历史积累中</span>
       </div>
       <p>${escapeHtml(anchor.subtitle)}</p>
+      <div class="indicator-meaning">${renderMeaning(["把估值、盈利增长和资本回报放在一起，判断当前价格对应的中长期赔率。", "盈利收益率和ROE需结合PB理解；便宜可能是风险补偿，不等于立即低估。", "基本面只决定观察优先级和长期仓位空间，入场仍等待价格与压力支柱确认。"])}</div>
       <div class="fundamental-grid">
         ${anchor.metrics.map((metric) => `
           <article class="fundamental-metric">
@@ -756,6 +798,7 @@ function renderIndicator(indicator) {
         </span>
       </summary>
       <div class="indicator-body">
+        <div class="indicator-meaning">${renderMeaning(meaningForIndicator(indicator))}</div>
         <dl class="indicator-meta">
           <div><dt>权重</dt><dd>${formatWeight(indicator.weight)}（同板块内${indicator.score === null ? "；无数据时排除" : ""}）</dd></div>
           <div><dt>计算方式</dt><dd>${escapeHtml(indicator.formula)}</dd></div>

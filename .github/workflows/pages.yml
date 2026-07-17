@@ -51,7 +51,7 @@ jobs:
       - name: Build static site artifact
         run: |
           mkdir -p _site
-          cp index.html us.html china.html hong-kong.html crypto.html china-hk.html styles.css app.js model.js config.js _site/
+          cp index.html us.html china.html hong-kong.html crypto.html china-hk.html settings.html styles.css app.js model.js config.js _site/
           cp -R data _site/data
           touch _site/.nojekyll
 

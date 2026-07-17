@@ -193,10 +193,15 @@ body[data-page="dashboard"] .status-banner.success { display: none; }
 .matrix-cell.unavailable { color: var(--muted); }.matrix-cell.unavailable strong { font-size: 12px; }.matrix-cell.unavailable span { font-size: 10px; }
 .fundamental-cell { grid-template-columns: repeat(2,minmax(0,1fr)); }
 .fundamental-cell > span { display: grid; gap: 2px; }.fundamental-cell small { color: var(--muted); font-size: 9px; }.fundamental-cell strong { font-size: 13px; }
-.matrix-expanded { display: grid; grid-template-columns: repeat(4,minmax(0,1fr)); margin-left: 210px; border-top: 1px dashed var(--border); background: #f8fafc; }
+.matrix-expanded { display: grid; grid-template-columns: 210px repeat(4,minmax(0,1fr)); border-top: 1px dashed var(--border); background: #f8fafc; }
 .matrix-expanded article { min-width: 0; padding: 15px; border-right: 1px solid var(--border); }.matrix-expanded article:last-child { border-right: 0; }
 .matrix-expanded h4 { margin: 0 0 9px; font-size: 12px; }.matrix-expanded p { margin: 0 0 8px; color: var(--ink-soft); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
 .matrix-expanded .method-source { color: var(--muted); font-size: 9px; }
+.matrix-meaning { position: sticky; left: 0; z-index: 2; min-width: 0; padding: 15px; border-right: 1px solid var(--border); background: #eef4ff; }
+.matrix-meaning h4,.indicator-meaning h4 { margin: 0 0 9px; color: var(--blue); font-size: 12px; }
+.matrix-meaning p,.indicator-meaning p { margin: 0 0 8px; color: var(--ink-soft); font-size: 11px; line-height: 1.55; }
+.indicator-meaning { padding: 13px 14px; border: 1px solid #cad9f2; border-radius: 8px; background: #f1f6ff; }
+.indicator-meaning p:last-child,.matrix-meaning p:last-child { margin-bottom: 0; }
 body[data-page="segment-detail"] .detail-status-panel { display: none; }
 body[data-page="segment-detail"] .topbar-actions .toggle,
 body[data-page="segment-detail"] .topbar-actions select { display: none; }
@@ -508,7 +513,7 @@ body[data-page="dashboard"] .segments-grid {
   .framework-matrix { min-width: 920px; }
   .matrix-grid { grid-template-columns: 180px repeat(4,185px); }
   .matrix-header { position: static; }
-  .matrix-expanded { grid-template-columns: repeat(4,185px); margin-left: 180px; }
+  .matrix-expanded { grid-template-columns: 180px repeat(4,185px); }
 }
 
 .legacy-split-grid {
